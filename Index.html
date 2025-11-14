@@ -25,6 +25,28 @@
         margin: 0;
         color: #5f6368;
       }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 16px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: none;
+        border-radius: 6px;
+        padding: 10px 18px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        background-color: #1a73e8;
+        color: #fff;
+        transition: background-color 0.2s ease;
+      }
+      .button:hover {
+        background-color: #185abc;
+      }
       .card {
         background: #fff;
         border-radius: 12px;
@@ -65,6 +87,109 @@
         padding: 48px 0;
         color: #5f6368;
       }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(32, 33, 36, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+      .modal {
+        background: #fff;
+        border-radius: 12px;
+        width: min(720px, 90vw);
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 8px 24px rgba(32, 33, 36, 0.28);
+        padding: 24px;
+        position: relative;
+      }
+      .modal h2 {
+        margin-top: 0;
+      }
+      .modal .close-button {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        background: transparent;
+        border: none;
+        font-size: 20px;
+        cursor: pointer;
+        color: #5f6368;
+      }
+      form label {
+        display: block;
+        font-weight: 500;
+        margin-top: 16px;
+      }
+      input[type='text'],
+      input[type='date'],
+      input[type='number'],
+      select,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        padding: 10px;
+        margin-top: 6px;
+        font-size: 14px;
+        background: #fff;
+      }
+      textarea {
+        min-height: 72px;
+        resize: vertical;
+      }
+      .inline {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .inline > div {
+        flex: 1 1 240px;
+      }
+      fieldset {
+        margin-top: 20px;
+        border: 1px solid #dadce0;
+        border-radius: 8px;
+        padding: 16px;
+      }
+      fieldset legend {
+        font-weight: 600;
+        padding: 0 6px;
+      }
+      .checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 10px;
+      }
+      .checkbox-group label {
+        font-weight: 400;
+      }
+      .form-actions {
+        margin-top: 24px;
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+      }
+      .secondary-button {
+        background-color: #f1f3f4;
+        color: #202124;
+      }
+      .secondary-button:hover {
+        background-color: #e4e7eb;
+      }
+      .hidden {
+        display: none;
+      }
+      .error-message {
+        margin-top: 12px;
+        color: #d93025;
+        font-size: 13px;
+      }
       footer {
         margin-top: 32px;
         font-size: 12px;
@@ -73,6 +198,16 @@
       }
     </style>
     <script>
+      let metadata = {
+        projects: [],
+        statuses: [],
+        priorities: []
+      };
+
+      function byId(id) {
+        return document.getElementById(id);
+      }
+
       function formatDate(value) {
         if (!value) {
           return '';
@@ -87,7 +222,7 @@
       function renderTasks(result) {
         const container = document.getElementById('taskContainer');
         if (!result || !result.tasks || result.tasks.length === 0) {
-          container.innerHTML = '<div class="empty-state">Nenhuma tarefa encontrada. Cadastre tarefas pela planilha vinculada usando o menu Gestor de Tarefas → Adicionar tarefa.</div>';
+          container.innerHTML = '<div class="empty-state">Nenhuma tarefa encontrada. Utilize o botão Adicionar tarefa ou cadastre pela planilha vinculada usando o menu Gestor de Tarefas → Adicionar tarefa.</div>';
           return;
         }
 
@@ -125,28 +260,339 @@
         container.appendChild(table);
       }
 
+      function handleError(error) {
+        const message = error && error.message ? error.message : 'Erro inesperado. Tente novamente.';
+        const errorBox = byId('formError');
+        if (errorBox) {
+          errorBox.textContent = message;
+          errorBox.classList.remove('hidden');
+        } else {
+          alert(message);
+        }
+      }
+
+      function populateSelectOptions(select, options, { placeholder } = {}) {
+        if (!select) return;
+        select.innerHTML = '';
+        if (placeholder) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = placeholder;
+          option.disabled = true;
+          option.selected = true;
+          select.appendChild(option);
+        }
+        options.forEach(optionValue => {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = optionValue;
+          select.appendChild(option);
+        });
+      }
+
+      function populateFormOptions() {
+        const projectDatalist = byId('projectOptions');
+        if (projectDatalist) {
+          projectDatalist.innerHTML = '';
+          metadata.projects.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project;
+            projectDatalist.appendChild(option);
+          });
+        }
+        populateSelectOptions(byId('statusField'), metadata.statuses);
+        populateSelectOptions(byId('priorityField'), metadata.priorities);
+      }
+
+      function openModal() {
+        const modalWrapper = byId('taskModalWrapper');
+        if (modalWrapper) {
+          modalWrapper.classList.remove('hidden');
+        }
+        const form = byId('taskForm');
+        if (form) {
+          form.reset();
+          const errorBox = byId('formError');
+          if (errorBox) {
+            errorBox.classList.add('hidden');
+            errorBox.textContent = '';
+          }
+          const statusField = byId('statusField');
+          if (statusField) {
+            if (!statusField.options.length) {
+              populateFormOptions();
+            }
+            const defaultStatus = metadata.statuses.includes('Em execução') ? 'Em execução' : metadata.statuses[0] || '';
+            statusField.value = defaultStatus;
+            toggleRecurrenceFields();
+          }
+          const priorityField = byId('priorityField');
+          if (priorityField && metadata.priorities.length) {
+            if (!priorityField.options.length) {
+              populateFormOptions();
+            }
+            priorityField.value = metadata.priorities.includes('Média') ? 'Média' : metadata.priorities[0];
+          }
+          const today = new Date().toISOString().substring(0, 10);
+          const fupField = byId('fupDateField');
+          if (fupField) {
+            fupField.value = today;
+          }
+        }
+      }
+
+      function closeModal() {
+        const modalWrapper = byId('taskModalWrapper');
+        if (modalWrapper) {
+          modalWrapper.classList.add('hidden');
+        }
+      }
+
+      function toggleRecurrenceFields() {
+        const statusField = byId('statusField');
+        const recurrenceFields = byId('recurrenceFields');
+        if (!statusField || !recurrenceFields) {
+          return;
+        }
+        if (statusField.value === 'Recorrente') {
+          recurrenceFields.classList.remove('hidden');
+          toggleRecurrenceType();
+        } else {
+          recurrenceFields.classList.add('hidden');
+        }
+      }
+
+      function toggleRecurrenceType() {
+        const typeField = byId('recurrenceTypeField');
+        if (!typeField) return;
+        const type = typeField.value;
+        const weeklyConfig = byId('weeklyConfig');
+        const monthlyConfig = byId('monthlyConfig');
+        const dailyConfig = byId('dailyConfig');
+        if (weeklyConfig) {
+          weeklyConfig.classList.toggle('hidden', type !== 'Semanal');
+        }
+        if (monthlyConfig) {
+          monthlyConfig.classList.toggle('hidden', type !== 'Mensal');
+        }
+        if (dailyConfig) {
+          dailyConfig.classList.toggle('hidden', type !== 'Diária');
+        }
+        toggleMonthlyMode();
+      }
+
+      function toggleMonthlyMode() {
+        const modeField = byId('monthlyModeField');
+        const monthlyDayWrapper = byId('monthlyDayWrapper');
+        if (!modeField || !monthlyDayWrapper) return;
+        monthlyDayWrapper.classList.toggle('hidden', modeField.value !== 'fixedDay');
+      }
+
+      function serializeForm(form) {
+        const formData = new FormData(form);
+        const payload = {};
+        for (const [key, value] of formData.entries()) {
+          if (key === 'recurrenceDays') {
+            if (!payload[key]) {
+              payload[key] = [];
+            }
+            payload[key].push(value);
+          } else {
+            payload[key] = value;
+          }
+        }
+        return payload;
+      }
+
+      function handleSubmit(event) {
+        event.preventDefault();
+        const form = event.target;
+        const payload = serializeForm(form);
+        const errorBox = byId('formError');
+        if (errorBox) {
+          errorBox.classList.add('hidden');
+        }
+        google.script.run
+          .withSuccessHandler(function () {
+            closeModal();
+            form.reset();
+            init();
+          })
+          .withFailureHandler(handleError)
+          .submitTask(payload);
+      }
+
       function init() {
         const container = document.getElementById('taskContainer');
         container.textContent = 'Carregando tarefas...';
+        google.script.run
+          .withSuccessHandler(function (result) {
+            metadata = result || metadata;
+            populateFormOptions();
+          })
+          .withFailureHandler(function () {
+            metadata = { projects: [], statuses: ['Em execução', 'Concluída', 'Cancelada', 'Recorrente'], priorities: ['Alta', 'Média', 'Baixa'] };
+            populateFormOptions();
+          })
+          .getMetadata();
         google.script.run.withSuccessHandler(renderTasks).getTasksForWeb();
       }
 
       document.addEventListener('DOMContentLoaded', init);
+      document.addEventListener('DOMContentLoaded', function () {
+        const addButton = byId('addTaskButton');
+        if (addButton) {
+          addButton.addEventListener('click', openModal);
+        }
+        const closeButtons = document.querySelectorAll('[data-close-modal]');
+        closeButtons.forEach(button => {
+          button.addEventListener('click', closeModal);
+        });
+        const form = byId('taskForm');
+        if (form) {
+          form.addEventListener('submit', handleSubmit);
+        }
+        const statusField = byId('statusField');
+        if (statusField) {
+          statusField.addEventListener('change', toggleRecurrenceFields);
+        }
+        const recurrenceTypeField = byId('recurrenceTypeField');
+        if (recurrenceTypeField) {
+          recurrenceTypeField.addEventListener('change', toggleRecurrenceType);
+        }
+        const monthlyModeField = byId('monthlyModeField');
+        if (monthlyModeField) {
+          monthlyModeField.addEventListener('change', toggleMonthlyMode);
+        }
+      });
     </script>
   </head>
   <body>
     <header>
       <h1>Gestor de Tarefas</h1>
       <p class="description">
-        Visualização em modo Web App. Os cadastros e atualizações continuam sendo feitos pela planilha do Google Sheets vinculada, utilizando o menu <strong>Gestor de Tarefas → Adicionar tarefa</strong>.
+        Visualização em modo Web App. Cadastre tarefas pelo botão <strong>Adicionar tarefa</strong> ou pela planilha do Google Sheets vinculada utilizando o menu <strong>Gestor de Tarefas → Adicionar tarefa</strong>.
       </p>
     </header>
     <main class="card">
+      <div class="actions">
+        <button id="addTaskButton" class="button" type="button">Adicionar tarefa</button>
+      </div>
       <div class="status-info">
         A tabela abaixo é preenchida automaticamente com os dados da aba <strong>Tarefas</strong> da planilha.
       </div>
       <div id="taskContainer" class="table-wrapper"></div>
     </main>
+    <div id="taskModalWrapper" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal">
+        <button class="close-button" type="button" aria-label="Fechar" data-close-modal>&times;</button>
+        <h2>Adicionar tarefa</h2>
+        <form id="taskForm">
+          <label>
+            Título da tarefa
+            <input type="text" name="title" required />
+          </label>
+          <label>
+            Descrição
+            <textarea name="description"></textarea>
+          </label>
+          <label>
+            Projeto
+            <input type="text" name="project" list="projectOptions" required />
+            <datalist id="projectOptions"></datalist>
+          </label>
+          <div class="inline">
+            <div>
+              <label>
+                Status
+                <select id="statusField" name="status" required></select>
+              </label>
+            </div>
+            <div>
+              <label>
+                Prioridade
+                <select id="priorityField" name="priority" required></select>
+              </label>
+            </div>
+          </div>
+          <div class="inline">
+            <div>
+              <label>
+                Esforço (1-10)
+                <input type="number" name="effort" min="1" max="10" step="1" value="5" />
+              </label>
+            </div>
+            <div>
+              <label>
+                Data FUP
+                <input type="date" id="fupDateField" name="fupDate" required />
+              </label>
+            </div>
+            <div>
+              <label>
+                Data limite
+                <input type="date" name="deadline" />
+              </label>
+            </div>
+          </div>
+          <fieldset id="recurrenceFields" class="hidden">
+            <legend>Recorrência</legend>
+            <label>
+              Tipo de recorrência
+              <select id="recurrenceTypeField" name="recurrenceType">
+                <option value="Semanal">Semanal</option>
+                <option value="Mensal">Mensal</option>
+                <option value="Diária">Diária</option>
+              </select>
+            </label>
+            <div id="weeklyConfig" class="hidden">
+              <label>
+                Intervalo semanal (a cada N semanas)
+                <input type="number" name="weeklyInterval" min="1" value="1" />
+              </label>
+              <label>Dias da semana</label>
+              <div class="checkbox-group">
+                <label><input type="checkbox" name="recurrenceDays" value="1" /> Segunda</label>
+                <label><input type="checkbox" name="recurrenceDays" value="2" /> Terça</label>
+                <label><input type="checkbox" name="recurrenceDays" value="3" /> Quarta</label>
+                <label><input type="checkbox" name="recurrenceDays" value="4" /> Quinta</label>
+                <label><input type="checkbox" name="recurrenceDays" value="5" /> Sexta</label>
+                <label><input type="checkbox" name="recurrenceDays" value="6" /> Sábado</label>
+                <label><input type="checkbox" name="recurrenceDays" value="0" /> Domingo</label>
+              </div>
+            </div>
+            <div id="monthlyConfig" class="hidden">
+              <label>
+                Configuração mensal
+                <select id="monthlyModeField" name="monthlyMode">
+                  <option value="sameDay">Mesmo dia da FUP</option>
+                  <option value="fixedDay">Dia específico</option>
+                </select>
+              </label>
+              <label id="monthlyDayWrapper" class="hidden">
+                Dia do mês (1 a 28)
+                <input type="number" name="monthlyDay" min="1" max="28" />
+              </label>
+            </div>
+            <div id="dailyConfig" class="hidden">
+              <label>
+                Intervalo diário (a cada N dias)
+                <input type="number" name="dailyInterval" min="1" value="1" />
+              </label>
+            </div>
+          </fieldset>
+          <label>
+            Observações
+            <textarea name="notes"></textarea>
+          </label>
+          <div id="formError" class="error-message hidden" role="alert"></div>
+          <div class="form-actions">
+            <button type="button" class="button secondary-button" data-close-modal>Cancelar</button>
+            <button type="submit" class="button">Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
     <footer>Atualize a página para obter os dados mais recentes.</footer>
   </body>
 </html>
