@@ -87,7 +87,7 @@
       function renderTasks(result) {
         const container = document.getElementById('taskContainer');
         if (!result || !result.tasks || result.tasks.length === 0) {
-          container.innerHTML = '<div class="empty-state">Nenhuma tarefa encontrada. Cadastre tarefas pela planilha vinculada.</div>';
+          container.innerHTML = '<div class="empty-state">Nenhuma tarefa encontrada. Cadastre tarefas pela planilha vinculada usando o menu Gestor de Tarefas → Adicionar tarefa.</div>';
           return;
         }
 
@@ -138,7 +138,7 @@
     <header>
       <h1>Gestor de Tarefas</h1>
       <p class="description">
-        Visualização em modo Web App. Os cadastros e atualizações continuam sendo feitos pela planilha do Google Sheets vinculada.
+        Visualização em modo Web App. Os cadastros e atualizações continuam sendo feitos pela planilha do Google Sheets vinculada, utilizando o menu <strong>Gestor de Tarefas → Adicionar tarefa</strong>.
       </p>
     </header>
     <main class="card">
