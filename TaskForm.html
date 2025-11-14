@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        padding: 16px;
+        color: #202124;
+        background-color: #fff;
+      }
+      h1 {
+        font-size: 18px;
+        margin-top: 0;
+      }
+      label {
+        display: block;
+        font-weight: 500;
+        margin-top: 12px;
+      }
+      input[type="text"],
+      input[type="date"],
+      input[type="number"],
+      select,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        padding: 8px;
+        margin-top: 4px;
+        font-size: 14px;
+        background: #fff;
+      }
+      textarea {
+        min-height: 60px;
+        resize: vertical;
+      }
+      fieldset {
+        margin-top: 12px;
+        border: 1px solid #dadce0;
+        border-radius: 6px;
+        padding: 12px;
+      }
+      legend {
+        font-weight: 600;
+      }
+      .actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 8px;
+      }
+      button {
+        border: none;
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button.primary {
+        background-color: #1a73e8;
+        color: #fff;
+      }
+      button.secondary {
+        background-color: #f1f3f4;
+        color: #202124;
+      }
+      .inline {
+        display: flex;
+        gap: 8px;
+      }
+      .inline > div {
+        flex: 1;
+      }
+      .hidden {
+        display: none;
+      }
+      .checkbox-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .checkbox-group label {
+        font-weight: 400;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>{{ task ? 'Editar tarefa' : 'Nova tarefa' }}</h1>
+    <form id="taskForm">
+      <input type="hidden" name="id" value="{{ task ? task['ID'] : '' }}" />
+      <input type="hidden" name="rowNumber" value="{{ task ? task.rowNumber : '' }}" />
+
+      <label>
+        Título da tarefa
+        <input type="text" name="title" required value="{{ task ? task['Título'] : '' }}" />
+      </label>
+
+      <label>
+        Descrição
+        <textarea name="description">{{ task ? task['Descrição'] : '' }}</textarea>
+      </label>
+
+      <label>
+        Projeto
+        <input list="projects" name="project" required value="{{ task ? task['Projeto'] : '' }}" />
+        <datalist id="projects">
+          <? for (var i = 0; i < projects.length; i++) { ?>
+            <option value="<?= projects[i]; ?>"></option>
+          <? } ?>
+        </datalist>
+      </label>
+
+      <label>
+        Status
+        <select name="status" id="status" required>
+          <? var statusValue = task ? task['Status'] : defaultStatus; ?>
+          <option value="Em execução" <?= statusValue === 'Em execução' ? 'selected' : '' ?>>Em execução</option>
+          <option value="Concluída" <?= statusValue === 'Concluída' ? 'selected' : '' ?>>Concluída</option>
+          <option value="Cancelada" <?= statusValue === 'Cancelada' ? 'selected' : '' ?>>Cancelada</option>
+          <option value="Recorrente" <?= statusValue === 'Recorrente' ? 'selected' : '' ?>>Recorrente</option>
+        </select>
+      </label>
+
+      <div class="inline">
+        <div>
+          <label>
+            Prioridade (Alta, Média, Baixa)
+            <select name="priority" required>
+              <? var priorityValue = task ? task['Prioridade'] : 'Média'; ?>
+              <option value="Alta" <?= priorityValue === 'Alta' ? 'selected' : '' ?>>Alta</option>
+              <option value="Média" <?= priorityValue === 'Média' ? 'selected' : '' ?>>Média</option>
+              <option value="Baixa" <?= priorityValue === 'Baixa' ? 'selected' : '' ?>>Baixa</option>
+            </select>
+          </label>
+        </div>
+        <div>
+          <label>
+            Esforço (1-10)
+            <input type="number" name="effort" min="1" max="10" step="1" value="{{ task ? task['Esforço'] : '5' }}" />
+          </label>
+        </div>
+      </div>
+
+      <div class="inline">
+        <div>
+          <label>
+            Data FUP
+            <? var fup = task && task['Data FUP'] instanceof Date ? task['Data FUP'].toISOString().substring(0, 10) : ''; ?>
+            <input type="date" name="fupDate" value="<?= fup ?>" required />
+          </label>
+        </div>
+        <div>
+          <label>
+            Data limite
+            <? var deadline = task && task['Data Limite'] instanceof Date ? task['Data Limite'].toISOString().substring(0, 10) : ''; ?>
+            <input type="date" name="deadline" value="<?= deadline ?>" />
+          </label>
+        </div>
+      </div>
+
+      <fieldset id="recurrenceFields" class="hidden">
+        <legend>Recorrência</legend>
+        <label>
+          Tipo de recorrência
+          <? var recurrenceType = task ? task['Tipo Recorrência'] : 'Semanal'; ?>
+          <select name="recurrenceType" id="recurrenceType">
+            <option value="Semanal" <?= recurrenceType === 'Semanal' ? 'selected' : '' ?>>Semanal</option>
+            <option value="Mensal" <?= recurrenceType === 'Mensal' ? 'selected' : '' ?>>Mensal</option>
+            <option value="Diária" <?= recurrenceType === 'Diária' ? 'selected' : '' ?>>Diária</option>
+          </select>
+        </label>
+
+        <div id="weeklyConfig" class="hidden">
+          <?
+            var recurrenceConfig = task ? task['Configuração Recorrência'] : '';
+            var recurrenceConfigObject = null;
+            if (recurrenceConfig) {
+              try {
+                recurrenceConfigObject = JSON.parse(recurrenceConfig);
+              } catch (e) {
+                recurrenceConfigObject = null;
+              }
+            }
+            var weeklyIntervalValue = 1;
+            var monthlyModeValue = 'sameDay';
+            var monthlyDayValue = '';
+            var dailyIntervalValue = 1;
+            var selectedDays = [];
+            if (recurrenceConfigObject) {
+              if (recurrenceConfigObject.type === 'weekly') {
+                weeklyIntervalValue = recurrenceConfigObject.frequency || 1;
+                if (recurrenceConfigObject.days) {
+                  selectedDays = recurrenceConfigObject.days.map(String);
+                }
+              }
+              if (recurrenceConfigObject.type === 'monthly') {
+                monthlyModeValue = recurrenceConfigObject.mode || 'sameDay';
+                monthlyDayValue = recurrenceConfigObject.day || '';
+              }
+              if (recurrenceConfigObject.type === 'daily') {
+                dailyIntervalValue = recurrenceConfigObject.interval || 1;
+              }
+            }
+          ?>
+          <label>
+            Intervalo semanal (a cada N semanas)
+            <input type="number" name="weeklyInterval" min="1" value="<?= weeklyIntervalValue ?>" />
+          </label>
+          <label>Dias da semana</label>
+          <div class="checkbox-group">
+            <? var days = [
+              { value: '1', label: 'Segunda' },
+              { value: '2', label: 'Terça' },
+              { value: '3', label: 'Quarta' },
+              { value: '4', label: 'Quinta' },
+              { value: '5', label: 'Sexta' },
+              { value: '6', label: 'Sábado' },
+              { value: '0', label: 'Domingo' }
+            ];
+            for (var i = 0; i < days.length; i++) {
+              var day = days[i];
+            ?>
+              <label>
+                <input type="checkbox" name="recurrenceDays" value="<?= day.value ?>" <?= selectedDays.indexOf(day.value) > -1 ? 'checked' : '' ?> />
+                <?= day.label ?>
+              </label>
+            <? } ?>
+          </div>
+        </div>
+
+        <div id="monthlyConfig" class="hidden">
+          <label>
+            Configuração mensal
+            <select name="monthlyMode" id="monthlyMode">
+              <option value="sameDay" <?= monthlyModeValue === 'sameDay' ? 'selected' : '' ?>>Mesmo dia da FUP</option>
+              <option value="fixedDay" <?= monthlyModeValue === 'fixedDay' ? 'selected' : '' ?>>Dia específico</option>
+            </select>
+          </label>
+          <label id="monthlyDayWrapper" class="hidden">
+            Dia do mês (1 a 28)
+            <input type="number" name="monthlyDay" min="1" max="28" value="<?= monthlyDayValue ?>" />
+          </label>
+        </div>
+
+        <div id="dailyConfig" class="hidden">
+          <label>
+            Intervalo diário (a cada N dias)
+            <input type="number" name="dailyInterval" min="1" value="<?= dailyIntervalValue ?>" />
+          </label>
+        </div>
+      </fieldset>
+
+      <label>
+        Observações
+        <textarea name="notes">{{ task ? task['Observações'] : '' }}</textarea>
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="primary">Salvar</button>
+        <button type="button" class="secondary" onclick="google.script.host.close()">Cancelar</button>
+      </div>
+    </form>
+
+    <script>
+      const statusField = document.getElementById('status');
+      const recurrenceFields = document.getElementById('recurrenceFields');
+      const recurrenceTypeField = document.getElementById('recurrenceType');
+      const weeklyConfig = document.getElementById('weeklyConfig');
+      const monthlyConfig = document.getElementById('monthlyConfig');
+      const monthlyModeField = document.getElementById('monthlyMode');
+      const monthlyDayWrapper = document.getElementById('monthlyDayWrapper');
+      const dailyConfig = document.getElementById('dailyConfig');
+
+      function toggleRecurrenceFields() {
+        if (!statusField || !recurrenceFields) {
+          return;
+        }
+        if (statusField.value === 'Recorrente') {
+          recurrenceFields.classList.remove('hidden');
+          toggleRecurrenceType();
+        } else {
+          recurrenceFields.classList.add('hidden');
+        }
+      }
+
+      function toggleRecurrenceType() {
+        if (!recurrenceTypeField) {
+          return;
+        }
+        const type = recurrenceTypeField.value;
+        weeklyConfig.classList.toggle('hidden', type !== 'Semanal');
+        monthlyConfig.classList.toggle('hidden', type !== 'Mensal');
+        dailyConfig.classList.toggle('hidden', type !== 'Diária');
+        toggleMonthlyMode();
+      }
+
+      function toggleMonthlyMode() {
+        if (!monthlyModeField || !monthlyDayWrapper) {
+          return;
+        }
+        if (monthlyModeField.value === 'fixedDay') {
+          monthlyDayWrapper.classList.remove('hidden');
+        } else {
+          monthlyDayWrapper.classList.add('hidden');
+        }
+      }
+
+      if (statusField) {
+        statusField.addEventListener('change', toggleRecurrenceFields);
+      }
+      if (recurrenceTypeField) {
+        recurrenceTypeField.addEventListener('change', toggleRecurrenceType);
+      }
+      if (monthlyModeField) {
+        monthlyModeField.addEventListener('change', toggleMonthlyMode);
+      }
+
+      toggleRecurrenceFields();
+
+      const form = document.getElementById('taskForm');
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        const formData = new FormData(form);
+        const payload = {};
+        for (const [key, value] of formData.entries()) {
+          if (key === 'recurrenceDays') {
+            if (!payload[key]) {
+              payload[key] = [];
+            }
+            payload[key].push(value);
+          } else {
+            payload[key] = value;
+          }
+        }
+        if (formData.getAll('recurrenceDays').length && !payload.recurrenceDays) {
+          payload.recurrenceDays = formData.getAll('recurrenceDays');
+        }
+        google.script.run
+          .withSuccessHandler(function () {
+            google.script.host.close();
+          })
+          .withFailureHandler(function (err) {
+            alert('Erro ao salvar tarefa: ' + err.message);
+          })
+          .submitTask(payload);
+      });
+    </script>
+  </body>
+</html>
