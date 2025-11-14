@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Gestor de Tarefas</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: 'Google Sans', Roboto, Arial, sans-serif;
+        margin: 0;
+        padding: 24px;
+        background: #f7f8f9;
+        color: #202124;
+      }
+      header {
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 24px;
+      }
+      p.description {
+        margin: 0;
+        color: #5f6368;
+      }
+      .card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(60, 64, 67, 0.15);
+        padding: 24px;
+      }
+      .status-info {
+        margin-bottom: 16px;
+        font-size: 14px;
+        color: #5f6368;
+      }
+      .table-wrapper {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 640px;
+      }
+      thead {
+        background: #f1f3f4;
+      }
+      th,
+      td {
+        padding: 12px;
+        border-bottom: 1px solid #e0e0e0;
+        text-align: left;
+        font-size: 14px;
+      }
+      th {
+        font-weight: 600;
+      }
+      tbody tr:hover {
+        background: #f6faff;
+      }
+      .empty-state {
+        text-align: center;
+        padding: 48px 0;
+        color: #5f6368;
+      }
+      footer {
+        margin-top: 32px;
+        font-size: 12px;
+        color: #9aa0a6;
+        text-align: center;
+      }
+    </style>
+    <script>
+      function formatDate(value) {
+        if (!value) {
+          return '';
+        }
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return value;
+        }
+        return date.toLocaleDateString('pt-BR');
+      }
+
+      function renderTasks(result) {
+        const container = document.getElementById('taskContainer');
+        if (!result || !result.tasks || result.tasks.length === 0) {
+          container.innerHTML = '<div class="empty-state">Nenhuma tarefa encontrada. Cadastre tarefas pela planilha vinculada.</div>';
+          return;
+        }
+
+        const header = result.header || [];
+        const rows = result.tasks || [];
+        const table = document.createElement('table');
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        header.forEach(function (column) {
+          const th = document.createElement('th');
+          th.textContent = column;
+          headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        rows.forEach(function (row) {
+          const tr = document.createElement('tr');
+          row.forEach(function (cell, index) {
+            const td = document.createElement('td');
+            if (header[index] && header[index].toLowerCase().includes('data')) {
+              td.textContent = formatDate(cell);
+            } else {
+              td.textContent = cell;
+            }
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+
+        container.innerHTML = '';
+        container.appendChild(table);
+      }
+
+      function init() {
+        const container = document.getElementById('taskContainer');
+        container.textContent = 'Carregando tarefas...';
+        google.script.run.withSuccessHandler(renderTasks).getTasksForWeb();
+      }
+
+      document.addEventListener('DOMContentLoaded', init);
+    </script>
+  </head>
+  <body>
+    <header>
+      <h1>Gestor de Tarefas</h1>
+      <p class="description">
+        Visualização em modo Web App. Os cadastros e atualizações continuam sendo feitos pela planilha do Google Sheets vinculada.
+      </p>
+    </header>
+    <main class="card">
+      <div class="status-info">
+        A tabela abaixo é preenchida automaticamente com os dados da aba <strong>Tarefas</strong> da planilha.
+      </div>
+      <div id="taskContainer" class="table-wrapper"></div>
+    </main>
+    <footer>Atualize a página para obter os dados mais recentes.</footer>
+  </body>
+</html>
