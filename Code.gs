@@ -483,3 +483,34 @@ function getMetadata() {
     priorities: PRIORITY_ORDER
   };
 }
+
+/**
+ * Fornece os dados para exibição no modo Web App.
+ */
+function getTasksForWeb() {
+  setupSheet_();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  if (!sheet) {
+    return { header: HEADER_ROW, tasks: [] };
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return { header: HEADER_ROW, tasks: [] };
+  }
+
+  const data = sheet.getRange(2, 1, lastRow - 1, HEADER_ROW.length).getDisplayValues();
+  return { header: HEADER_ROW, tasks: data };
+}
+
+/**
+ * Entrada padrão para publicação como Web App.
+ */
+function doGet() {
+  setupSheet_();
+  const template = HtmlService.createTemplateFromFile('Index');
+  return template
+    .evaluate()
+    .setTitle('Gestor de Tarefas')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}

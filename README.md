@@ -17,6 +17,7 @@ Este projeto disponibiliza o código-fonte de um aplicativo de acompanhamento de
 - `Code.gs`: script principal que cria o menu, manipula os dados da planilha e aplica regras de ordenação/recorrência.
 - `TaskForm.html`: formulário exibido na barra lateral para cadastrar ou editar tarefas.
 - `FilterSidebar.html`: barra lateral para aplicar filtros personalizados e restaurar a classificação padrão.
+- `Index.html`: página utilizada quando o projeto é publicado como Web App, exibindo a lista de tarefas em tabela.
 
 ## Configuração da planilha
 
@@ -37,6 +38,13 @@ ID | Título | Descrição | Projeto | Status | Prioridade | Esforço | Data FUP
 2. **Filtros personalizados**: use **Gestor de Tarefas → Aplicar filtros** para refinar a visualização.
 3. **Classificar (padrão)**: utilize o botão no menu ou na barra de filtros para remover filtros e restaurar a visualização padrão (tarefas concluídas/canceladas ficam ocultas).
 4. **Recorrências**: tarefas com status "Recorrente" exibem configurações extras. Execute periodicamente **Gestor de Tarefas → Atualizar recorrências** para avançar as datas conforme a periodicidade definida.
+
+### Publicar como Web App
+
+1. No editor do Apps Script, acesse **Implantar → Implantações** e crie uma nova implantação do tipo **Aplicativo da web**.
+2. Escolha **Executar como: Você** e **Quem tem acesso: Qualquer pessoa com o link** (ou o nível desejado).
+3. Após implantar, abra a URL gerada. A página exibirá a tabela de tarefas usando o arquivo `Index.html` e os dados da aba `Tarefas`.
+4. Para atualizar os registros exibidos basta recarregar a página; edições continuam sendo realizadas diretamente pela planilha ou pelos menus personalizados.
 
 ## Observações
 
