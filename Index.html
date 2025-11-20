@@ -1,1 +1,579 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskMaster Offline</title>
+    
+    <!-- Carregando React e ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Carregando Babel para interpretar JSX no navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Carregando Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Ícones Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .subtask-done { text-decoration: line-through; color: #94a3b8; }
+        
+        /* Animation for modals */
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .modal-animate { animation: fadeIn 0.2s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans">
+    <div id="root"></div>
 
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- UTILS ---
+        const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
+        
+        const getTodayStr = () => new Date().toISOString().split('T')[0];
+        
+        const addDays = (dateStr, days) => {
+            const date = new Date(dateStr);
+            date.setDate(date.getDate() + days);
+            return date.toISOString().split('T')[0];
+        };
+
+        // --- ICONS (Lucide wrapper for React) ---
+        const Icon = ({ name, size = 20, className = "" }) => {
+            useEffect(() => {
+                lucide.createIcons();
+            }, [name]);
+            return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
+        };
+
+        // --- COMPONENTS ---
+
+        // 1. STATUS BADGE
+        const StatusBadge = ({ status }) => {
+            const colors = {
+                'Pendente': 'bg-slate-200 text-slate-700',
+                'Em Andamento': 'bg-blue-100 text-blue-700',
+                'Concluída': 'bg-green-100 text-green-700',
+                'Cancelada': 'bg-red-100 text-red-700',
+                'Recorrente': 'bg-purple-100 text-purple-700'
+            };
+            return <span className={`px-2 py-1 rounded-full text-xs font-bold ${colors[status] || colors['Pendente']}`}>{status}</span>;
+        };
+
+        // 2. RATING DISPLAY (Priority/Difficulty)
+        const RatingDisplay = ({ value, max = 5, icon = "star", color = "text-yellow-500" }) => {
+            return (
+                <div className="flex space-x-0.5">
+                    {[...Array(max)].map((_, i) => (
+                        <span key={i} className={i < value ? color : "text-slate-300"}>
+                            ●
+                        </span>
+                    ))}
+                </div>
+            );
+        };
+
+        // 3. MAIN APP
+        function App() {
+            // --- STATE ---
+            const [tasks, setTasks] = useState([]);
+            const [projects, setProjects] = useState(['Pessoal', 'Trabalho']);
+            const [view, setView] = useState('dashboard'); // dashboard, settings
+            const [modalOpen, setModalOpen] = useState(false);
+            const [editingTask, setEditingTask] = useState(null);
+            
+            // Configurações padrão
+            const [config, setConfig] = useState({
+                alertYellow: 7, // Dias antes
+                alertOrange: 3,
+                alertRed: 1,
+                overdueColor: 'border-l-slate-900 bg-slate-50', // Preto
+            });
+
+            const [filters, setFilters] = useState({
+                project: 'Todos',
+                status: 'Todos',
+                search: ''
+            });
+
+            // --- PERSISTENCE ---
+            useEffect(() => {
+                const savedTasks = localStorage.getItem('tm_tasks');
+                const savedProjects = localStorage.getItem('tm_projects');
+                const savedConfig = localStorage.getItem('tm_config');
+                if (savedTasks) setTasks(JSON.parse(savedTasks));
+                if (savedProjects) setProjects(JSON.parse(savedProjects));
+                if (savedConfig) setConfig(JSON.parse(savedConfig));
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('tm_tasks', JSON.stringify(tasks));
+                localStorage.setItem('tm_projects', JSON.stringify(projects));
+                localStorage.setItem('tm_config', JSON.stringify(config));
+                lucide.createIcons();
+            }, [tasks, projects, config]);
+
+            // --- LOGIC ---
+            
+            const getAlertLevel = (task) => {
+                if (task.status === 'Concluída' || task.status === 'Cancelada') return 'border-l-green-500'; // Sem alerta se feito
+                
+                if (!task.deadline) return 'border-l-slate-300';
+
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const deadline = new Date(task.deadline);
+                deadline.setHours(0,0,0,0); // Normalizar para comparar apenas data
+                
+                const diffTime = deadline - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+                if (diffDays < 0) return 'border-l-8 border-l-slate-900 bg-red-50'; // Atrasado (Preto)
+                if (diffDays <= config.alertRed) return 'border-l-8 border-l-red-500';
+                if (diffDays <= config.alertOrange) return 'border-l-8 border-l-orange-400';
+                if (diffDays <= config.alertYellow) return 'border-l-8 border-l-yellow-400';
+                
+                return 'border-l-4 border-l-blue-400'; // Normal
+            };
+
+            const saveTask = (task) => {
+                if (task.id) {
+                    setTasks(tasks.map(t => t.id === task.id ? task : t));
+                } else {
+                    setTasks([...tasks, { ...task, id: generateId() }]);
+                }
+                // Adicionar projeto se for novo
+                if (!projects.includes(task.project)) {
+                    setProjects([...projects, task.project]);
+                }
+                setModalOpen(false);
+                setEditingTask(null);
+            };
+
+            const deleteTask = (id) => {
+                if (confirm('Tem certeza que deseja excluir esta tarefa?')) {
+                    setTasks(tasks.filter(t => t.id !== id));
+                }
+            };
+
+            const toggleSubtask = (taskId, subIndex) => {
+                const newTasks = tasks.map(t => {
+                    if (t.id === taskId) {
+                        const newSub = [...t.subtasks];
+                        newSub[subIndex].completed = !newSub[subIndex].completed;
+                        return { ...t, subtasks: newSub };
+                    }
+                    return t;
+                });
+                setTasks(newTasks);
+            };
+
+            const shiftAllTasks = (days) => {
+                if (days === 0) return;
+                if (!confirm(`Deseja adiar todas as tarefas pendentes em ${days} dias?`)) return;
+
+                const newTasks = tasks.map(t => {
+                    if (t.status !== 'Concluída' && t.status !== 'Cancelada') {
+                        return { ...t, date: addDays(t.date, parseInt(days)) };
+                    }
+                    return t;
+                });
+                setTasks(newTasks);
+                alert('Tarefas reprogramadas com sucesso!');
+            };
+            
+            const exportData = () => {
+                const dataStr = JSON.stringify({tasks, projects, config});
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                const exportFileDefaultName = 'backup_tarefas.json';
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                linkElement.click();
+            };
+
+            const importData = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if(data.tasks) setTasks(data.tasks);
+                        if(data.projects) setProjects(data.projects);
+                        if(data.config) setConfig(data.config);
+                        alert('Backup restaurado com sucesso!');
+                    } catch (err) {
+                        alert('Erro ao ler arquivo.');
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            // --- FILTRAGEM ---
+            const filteredTasks = useMemo(() => {
+                return tasks.filter(t => {
+                    const matchProj = filters.project === 'Todos' || t.project === filters.project;
+                    const matchStatus = filters.status === 'Todos' || t.status === filters.status;
+                    const matchSearch = t.title.toLowerCase().includes(filters.search.toLowerCase());
+                    return matchProj && matchStatus && matchSearch;
+                }).sort((a, b) => {
+                    // Ordenar por Data (mais urgente primeiro), depois Prioridade
+                    if (a.date !== b.date) return a.date > b.date ? 1 : -1;
+                    return b.priority - a.priority;
+                });
+            }, [tasks, filters]);
+
+            const todayStr = getTodayStr();
+            const tomorrowStr = addDays(todayStr, 1);
+
+            const stats = {
+                today: tasks.filter(t => t.date === todayStr && t.status !== 'Concluída').length,
+                tomorrow: tasks.filter(t => t.date === tomorrowStr && t.status !== 'Concluída').length,
+                late: tasks.filter(t => t.deadline && t.deadline < todayStr && t.status !== 'Concluída').length
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col md:flex-row">
+                    {/* SIDEBAR */}
+                    <aside className="w-full md:w-64 bg-slate-900 text-white p-6 flex flex-col shadow-xl z-10">
+                        <h1 className="text-2xl font-bold flex items-center gap-2 mb-8">
+                            <Icon name="check-square" className="text-blue-400" /> TaskMaster
+                        </h1>
+
+                        <nav className="flex-1 space-y-2">
+                            <button onClick={() => setView('dashboard')} className={`w-full text-left px-4 py-2 rounded flex items-center gap-2 ${view === 'dashboard' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}>
+                                <Icon name="layout-dashboard" size={18}/> Dashboard
+                            </button>
+                            <button onClick={() => setView('settings')} className={`w-full text-left px-4 py-2 rounded flex items-center gap-2 ${view === 'settings' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}>
+                                <Icon name="settings" size={18}/> Configurações
+                            </button>
+                        </nav>
+
+                        <div className="mt-8 pt-8 border-t border-slate-700 space-y-4">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Hoje</span>
+                                <span className="bg-blue-500 px-2 rounded-full text-xs font-bold">{stats.today}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Amanhã</span>
+                                <span className="bg-indigo-500 px-2 rounded-full text-xs font-bold">{stats.tomorrow}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Atrasadas</span>
+                                <span className="bg-red-500 px-2 rounded-full text-xs font-bold">{stats.late}</span>
+                            </div>
+                        </div>
+                        
+                        <button onClick={() => { setEditingTask(null); setModalOpen(true); }} className="mt-6 w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded font-bold shadow-lg flex justify-center items-center gap-2 transition">
+                            <Icon name="plus" /> Nova Tarefa
+                        </button>
+                    </aside>
+
+                    {/* MAIN CONTENT */}
+                    <main className="flex-1 overflow-y-auto h-screen bg-slate-100 p-4 md:p-8">
+                        
+                        {view === 'dashboard' && (
+                            <div className="max-w-5xl mx-auto">
+                                {/* Filters Bar */}
+                                <div className="bg-white p-4 rounded-lg shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-end md:items-center justify-between">
+                                    <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+                                        <select className="border rounded p-2 text-sm" value={filters.project} onChange={e => setFilters({...filters, project: e.target.value})}>
+                                            <option value="Todos">Todos Projetos</option>
+                                            {projects.map(p => <option key={p} value={p}>{p}</option>)}
+                                        </select>
+                                        <select className="border rounded p-2 text-sm" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}>
+                                            <option value="Todos">Todos Status</option>
+                                            <option>Pendente</option>
+                                            <option>Em Andamento</option>
+                                            <option>Concluída</option>
+                                            <option>Recorrente</option>
+                                        </select>
+                                    </div>
+                                    <div className="w-full md:w-64">
+                                        <input type="text" placeholder="Buscar tarefa..." className="border rounded p-2 w-full text-sm" value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
+                                    </div>
+                                </div>
+
+                                {/* Tasks Grid */}
+                                <div className="grid gap-4">
+                                    {filteredTasks.length === 0 && (
+                                        <div className="text-center text-slate-400 py-10">Nenhuma tarefa encontrada.</div>
+                                    )}
+                                    
+                                    {filteredTasks.map(task => (
+                                        <div key={task.id} className={`bg-white rounded-lg shadow hover:shadow-md transition p-4 border-l-4 ${getAlertLevel(task)} relative group`}>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{task.project}</span>
+                                                    <h3 className="text-lg font-bold text-slate-800">{task.title}</h3>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => { setEditingTask(task); setModalOpen(true); }} className="p-1 text-slate-400 hover:text-blue-500"><Icon name="edit-2" size={16}/></button>
+                                                    <button onClick={() => deleteTask(task.id)} className="p-1 text-slate-400 hover:text-red-500"><Icon name="trash-2" size={16}/></button>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-y-2 gap-x-4 text-sm text-slate-600 mb-3">
+                                                <div className="flex items-center gap-1" title="Data Execução">
+                                                    <Icon name="calendar" size={14} /> 
+                                                    <span className={task.date === todayStr ? "font-bold text-blue-600" : (task.date === tomorrowStr ? "font-bold text-indigo-600" : "")}>
+                                                        {task.date === todayStr ? 'Hoje' : (task.date === tomorrowStr ? 'Amanhã' : task.date.split('-').reverse().join('/'))}
+                                                    </span>
+                                                </div>
+                                                {task.deadline && (
+                                                    <div className="flex items-center gap-1 text-red-600" title="Deadline">
+                                                        <Icon name="alert-circle" size={14} /> {task.deadline.split('-').reverse().join('/')}
+                                                    </div>
+                                                )}
+                                                <StatusBadge status={task.status} />
+                                            </div>
+
+                                            {/* Stats Row */}
+                                            <div className="flex items-center gap-4 text-xs text-slate-500 border-t border-slate-100 pt-2 mt-2">
+                                                <div className="flex items-center gap-1" title="Prioridade">
+                                                    Prioridade: <RatingDisplay value={task.priority} color="text-red-400" />
+                                                </div>
+                                                <div className="flex items-center gap-1" title="Dificuldade">
+                                                    Dificuldade: <RatingDisplay value={task.difficulty} color="text-blue-400" icon="activity" />
+                                                </div>
+                                            </div>
+
+                                            {/* Subtasks */}
+                                            {task.subtasks && task.subtasks.length > 0 && (
+                                                <div className="mt-3 bg-slate-50 p-2 rounded">
+                                                    <p className="text-xs font-bold text-slate-500 mb-1">Subtarefas</p>
+                                                    {task.subtasks.map((sub, idx) => (
+                                                        <div key={idx} className="flex items-center gap-2 text-sm">
+                                                            <input type="checkbox" checked={sub.completed} onChange={() => toggleSubtask(task.id, idx)} className="rounded text-blue-600" />
+                                                            <span className={sub.completed ? "subtask-done" : ""}>{sub.text}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            
+                                            {task.notes && (
+                                                <div className="mt-2 text-xs text-slate-500 italic">
+                                                    Obs: {task.notes}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {view === 'settings' && (
+                            <div className="max-w-2xl mx-auto bg-white rounded-lg shadow p-6">
+                                <h2 className="text-xl font-bold mb-6 border-b pb-2">Configurações</h2>
+                                
+                                <div className="mb-8">
+                                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="bell" className="text-yellow-500" /> Configuração de Alertas (Deadline)</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="block text-sm text-slate-600 mb-1">Alerta Amarelo (Dias antes)</label>
+                                            <input type="number" value={config.alertYellow} onChange={e => setConfig({...config, alertYellow: parseInt(e.target.value)})} className="border rounded p-2 w-full" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm text-slate-600 mb-1">Alerta Laranja (Dias antes)</label>
+                                            <input type="number" value={config.alertOrange} onChange={e => setConfig({...config, alertOrange: parseInt(e.target.value)})} className="border rounded p-2 w-full" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm text-slate-600 mb-1">Alerta Vermelho (Dias antes)</label>
+                                            <input type="number" value={config.alertRed} onChange={e => setConfig({...config, alertRed: parseInt(e.target.value)})} className="border rounded p-2 w-full" />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2">Se o deadline passar, a tarefa ficará <span className="font-bold text-black">Preta</span>.</p>
+                                </div>
+
+                                <div className="mb-8 border-t pt-6">
+                                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="calendar-clock" className="text-blue-500" /> Reprogramação em Massa (Shift)</h3>
+                                    <p className="text-sm text-slate-600 mb-3">Empurrar data de execução de todas as tarefas pendentes.</p>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => shiftAllTasks(1)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200">+1 Dia</button>
+                                        <button onClick={() => shiftAllTasks(3)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200">+3 Dias</button>
+                                        <button onClick={() => shiftAllTasks(7)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200">+1 Semana</button>
+                                    </div>
+                                </div>
+
+                                <div className="border-t pt-6">
+                                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="database" className="text-green-500" /> Backup de Dados</h3>
+                                    <div className="flex gap-4">
+                                        <button onClick={exportData} className="bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-700 flex items-center gap-2">
+                                            <Icon name="download" size={16} /> Exportar Backup
+                                        </button>
+                                        <label className="bg-slate-200 text-slate-800 px-4 py-2 rounded hover:bg-slate-300 cursor-pointer flex items-center gap-2">
+                                            <Icon name="upload" size={16} /> Restaurar Backup
+                                            <input type="file" className="hidden" onChange={importData} accept=".json" />
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                    </main>
+
+                    {/* TASK MODAL (Form) */}
+                    {modalOpen && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
+                            <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto modal-animate">
+                                <TaskForm 
+                                    task={editingTask} 
+                                    projects={projects} 
+                                    onSave={saveTask} 
+                                    onCancel={() => setModalOpen(false)} 
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // 4. TASK FORM COMPONENT
+        function TaskForm({ task, projects, onSave, onCancel }) {
+            const [formData, setFormData] = useState(task || {
+                title: '',
+                project: projects[0] || 'Geral',
+                date: getTodayStr(),
+                deadline: '',
+                status: 'Pendente',
+                priority: 3,
+                difficulty: 3,
+                notes: '',
+                subtasks: []
+            });
+
+            const [newProject, setNewProject] = useState('');
+            const [showNewProjInput, setShowNewProjInput] = useState(false);
+            const [tempSubtask, setTempSubtask] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave({
+                    ...formData,
+                    project: showNewProjInput && newProject ? newProject : formData.project
+                });
+            };
+
+            const addSubtask = () => {
+                if (!tempSubtask.trim()) return;
+                setFormData({...formData, subtasks: [...(formData.subtasks || []), { text: tempSubtask, completed: false }]});
+                setTempSubtask('');
+            };
+
+            const removeSubtask = (index) => {
+                const newSubs = [...formData.subtasks];
+                newSubs.splice(index, 1);
+                setFormData({...formData, subtasks: newSubs});
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="p-6">
+                    <div className="flex justify-between items-center mb-6 border-b pb-2">
+                        <h2 className="text-xl font-bold text-slate-800">{task ? 'Editar Tarefa' : 'Nova Tarefa'}</h2>
+                        <button type="button" onClick={onCancel} className="text-slate-400 hover:text-slate-600"><Icon name="x" /></button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div className="col-span-2">
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Título da Tarefa</label>
+                            <input required type="text" className="w-full border p-2 rounded" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Projeto</label>
+                            {!showNewProjInput ? (
+                                <div className="flex gap-2">
+                                    <select className="w-full border p-2 rounded" value={formData.project} onChange={e => setFormData({...formData, project: e.target.value})}>
+                                        {projects.map(p => <option key={p} value={p}>{p}</option>)}
+                                    </select>
+                                    <button type="button" onClick={() => setShowNewProjInput(true)} className="bg-slate-200 p-2 rounded hover:bg-slate-300" title="Novo Projeto"><Icon name="plus" size={16}/></button>
+                                </div>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <input type="text" placeholder="Nome do projeto" className="w-full border p-2 rounded" value={newProject} onChange={e => setNewProject(e.target.value)} />
+                                    <button type="button" onClick={() => setShowNewProjInput(false)} className="text-red-500 p-2"><Icon name="x" size={16}/></button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Status</label>
+                            <select className="w-full border p-2 rounded" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                                <option>Pendente</option>
+                                <option>Em Andamento</option>
+                                <option>Concluída</option>
+                                <option>Recorrente</option>
+                                <option>Cancelada</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Data Execução</label>
+                            <input type="date" required className="w-full border p-2 rounded" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-red-600 mb-1">Deadline (Prazo Final)</label>
+                            <input type="date" className="w-full border border-red-200 p-2 rounded bg-red-50" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Prioridade (1-5)</label>
+                            <input type="range" min="1" max="5" className="w-full" value={formData.priority} onChange={e => setFormData({...formData, priority: parseInt(e.target.value)})} />
+                            <div className="flex justify-between text-xs text-slate-400"><span>Baixa</span><span>Alta</span></div>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Dificuldade (1-5)</label>
+                            <input type="range" min="1" max="5" className="w-full" value={formData.difficulty} onChange={e => setFormData({...formData, difficulty: parseInt(e.target.value)})} />
+                             <div className="flex justify-between text-xs text-slate-400"><span>Fácil</span><span>Difícil</span></div>
+                        </div>
+                        
+                        <div className="col-span-2">
+                             <label className="block text-sm font-bold text-slate-700 mb-1">Subtarefas</label>
+                             <div className="flex gap-2 mb-2">
+                                <input type="text" placeholder="Adicionar item..." className="flex-1 border p-2 rounded text-sm" value={tempSubtask} onChange={e => setTempSubtask(e.target.value)} onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), addSubtask())} />
+                                <button type="button" onClick={addSubtask} className="bg-blue-100 text-blue-600 px-3 rounded font-bold">+</button>
+                             </div>
+                             <ul className="space-y-1">
+                                {(formData.subtasks || []).map((sub, idx) => (
+                                    <li key={idx} className="flex justify-between bg-slate-50 p-2 rounded text-sm">
+                                        <span>{sub.text}</span>
+                                        <button type="button" onClick={() => removeSubtask(idx)} className="text-red-400 hover:text-red-600"><Icon name="x" size={14}/></button>
+                                    </li>
+                                ))}
+                             </ul>
+                        </div>
+
+                        <div className="col-span-2">
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Observações</label>
+                            <textarea className="w-full border p-2 rounded h-20" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})}></textarea>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+                        <button type="button" onClick={onCancel} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
+                        <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 shadow-lg">Salvar Tarefa</button>
+                    </div>
+                </form>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
