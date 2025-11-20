@@ -199,37 +199,46 @@
             );
         };
 
-        const PostponeSelector = ({ max = 10, onShift, disabled = false }) => {
-            const baseActive = Math.ceil(max / 2);
+        const PostponeSelector = ({ baseDate, onShift, disabled = false }) => {
+            const pastDays = 7;
+            const futureDays = 14;
+            const referenceDate = baseDate || getTodayStr();
 
-            const handleSelect = (index) => {
-                if (disabled) return;
-                const shift = (index + 1) - baseActive;
-                if (!shift) return;
-                if (onShift) onShift(shift);
+            const offsets = useMemo(
+                () => [...Array(pastDays + futureDays + 1)].map((_, i) => i - pastDays),
+                [referenceDate]
+            );
+
+            const handleSelect = (offset) => {
+                if (disabled || offset === 0) return;
+                if (onShift) onShift(offset);
             };
 
             return (
-                <div className="flex items-center gap-1" title="Ajustar data de execução em dias úteis">
+                <div className="flex items-center gap-1" title="Ajustar data de execução por dia da semana">
                     <span className="text-[11px] font-semibold text-slate-500">Reagendar:</span>
-                    <div className="flex space-x-0.5">
-                        {[...Array(max)].map((_, i) => {
-                            const active = i < baseActive;
-                            const shift = (i + 1) - baseActive;
-                            const label = shift === 0
-                                ? 'Manter data atual'
-                                : `${shift > 0 ? 'Adiar' : 'Adiantar'} ${Math.abs(shift)} ${Math.abs(shift) === 1 ? 'dia útil' : 'dias úteis'}`;
+                    <div className="flex items-center gap-1 overflow-x-auto flex-nowrap">
+                        {offsets.map((offset) => {
+                            const targetDate = addDays(referenceDate, offset);
+                            const weekdayIndex = new Date(targetDate + 'T00:00:00').getDay();
+                            const weekdayLabel = WEEKDAY_LABELS[weekdayIndex];
+                            const isWeekendDay = weekdayIndex === 0 || weekdayIndex === 6;
+                            const isCurrent = offset === 0;
+                            const description = offset === 0
+                                ? 'Data atual de execução'
+                                : `${offset > 0 ? 'Adiar' : 'Adiantar'} para ${targetDate.split('-').reverse().join('/')}`;
+
                             return (
                                 <button
-                                    key={i}
+                                    key={offset}
                                     type="button"
                                     disabled={disabled}
-                                    onClick={() => handleSelect(i)}
-                                    className={`text-xs leading-none ${active ? 'text-blue-500' : 'text-slate-300'} ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:scale-110 transition-transform'}`}
-                                    aria-label={label}
-                                    title={label}
+                                    onClick={() => handleSelect(offset)}
+                                    className={`min-w-[22px] h-5 text-[10px] font-semibold rounded border leading-none flex items-center justify-center transition-colors ${isCurrent ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-sm' : 'border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600'} ${isWeekendDay ? 'text-red-500' : ''} ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                                    aria-label={description}
+                                    title={description}
                                 >
-                                    ➤
+                                    {weekdayLabel}
                                 </button>
                             );
                         })}
@@ -408,15 +417,15 @@
             setTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
         };
 
-        const adjustTaskExecutionDate = (id, businessDayShift) => {
-            if (!businessDayShift) return;
+        const adjustTaskExecutionDate = (id, dayShift) => {
+            if (!dayShift) return;
 
             setTasks(prev => prev.map(t => {
                 if (t.id !== id) return t;
-                const baseDate = getEffectiveDate(t) || getNextBusinessDay(getTodayStr());
+                const baseDate = getEffectiveDate(t) || getTodayStr();
                 return {
                     ...t,
-                    date: addBusinessDays(baseDate, businessDayShift),
+                    date: addDays(baseDate, dayShift),
                     deferBusinessDays: 0
                 };
             }));
@@ -900,6 +909,7 @@
                             </div>
                             {task.status !== 'Recorrente' && (
                                 <PostponeSelector
+                                    baseDate={executionDate}
                                     onShift={(shift) => adjustTaskExecutionDate(task.id, shift)}
                                 />
                             )}
