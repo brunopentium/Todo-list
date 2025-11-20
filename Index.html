@@ -199,26 +199,35 @@
             );
         };
 
-        const PostponeSelector = ({ value = 0, max = 10, onChange, disabled = false }) => {
-            const handleSelect = (count) => {
+        const PostponeSelector = ({ max = 10, onShift, disabled = false }) => {
+            const baseActive = Math.ceil(max / 2);
+
+            const handleSelect = (index) => {
                 if (disabled) return;
-                if (onChange) onChange(value === count ? 0 : count);
+                const shift = (index + 1) - baseActive;
+                if (!shift) return;
+                if (onShift) onShift(shift);
             };
 
             return (
-                <div className="flex items-center gap-1" title="Postergar em dias úteis">
-                    <span className="text-[11px] font-semibold text-slate-500">Adiar:</span>
+                <div className="flex items-center gap-1" title="Ajustar data de execução em dias úteis">
+                    <span className="text-[11px] font-semibold text-slate-500">Reagendar:</span>
                     <div className="flex space-x-0.5">
                         {[...Array(max)].map((_, i) => {
-                            const active = i < value;
+                            const active = i < baseActive;
+                            const shift = (i + 1) - baseActive;
+                            const label = shift === 0
+                                ? 'Manter data atual'
+                                : `${shift > 0 ? 'Adiar' : 'Adiantar'} ${Math.abs(shift)} ${Math.abs(shift) === 1 ? 'dia útil' : 'dias úteis'}`;
                             return (
                                 <button
                                     key={i}
                                     type="button"
                                     disabled={disabled}
-                                    onClick={() => handleSelect(i + 1)}
+                                    onClick={() => handleSelect(i)}
                                     className={`text-xs leading-none ${active ? 'text-blue-500' : 'text-slate-300'} ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:scale-110 transition-transform'}`}
-                                    aria-label={`Postergar ${i + 1} ${i + 1 === 1 ? 'dia útil' : 'dias úteis'}`}
+                                    aria-label={label}
+                                    title={label}
                                 >
                                     ➤
                                 </button>
@@ -381,10 +390,10 @@
                 return null;
             };
 
-            const getAlertLevel = (task) => {
-                if (task.status === 'Recorrente') return 'border-l-8 border-l-slate-400';
-                const level = getDeadlineLevel(task);
-                if (!level) return 'border-l-4 border-l-blue-400';
+        const getAlertLevel = (task) => {
+            if (task.status === 'Recorrente') return 'border-l-8 border-l-slate-400';
+            const level = getDeadlineLevel(task);
+            if (!level) return 'border-l-4 border-l-blue-400';
 
                 const map = {
                     overdue: `border-l-8 ${config.overdueColor}`,
@@ -395,14 +404,28 @@
                 return map[level] || 'border-l-4 border-l-blue-400';
             };
 
-            const updateTaskField = (id, field, value) => {
-                setTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
-            };
+        const updateTaskField = (id, field, value) => {
+            setTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
+        };
 
-            const advanceRecurrence = (task) => {
-                const nextDate = getNextRecurrenceDate(task);
-                if (!nextDate) {
-                    alert('Configure a recorrência desta tarefa para avançar.');
+        const adjustTaskExecutionDate = (id, businessDayShift) => {
+            if (!businessDayShift) return;
+
+            setTasks(prev => prev.map(t => {
+                if (t.id !== id) return t;
+                const baseDate = getEffectiveDate(t) || getNextBusinessDay(getTodayStr());
+                return {
+                    ...t,
+                    date: addBusinessDays(baseDate, businessDayShift),
+                    deferBusinessDays: 0
+                };
+            }));
+        };
+
+        const advanceRecurrence = (task) => {
+            const nextDate = getNextRecurrenceDate(task);
+            if (!nextDate) {
+                alert('Configure a recorrência desta tarefa para avançar.');
                     return;
                 }
                 updateTaskField(task.id, 'date', nextDate);
@@ -877,8 +900,7 @@
                             </div>
                             {task.status !== 'Recorrente' && (
                                 <PostponeSelector
-                                    value={postponeDays}
-                                    onChange={(val) => updateTaskField(task.id, 'deferBusinessDays', val)}
+                                    onShift={(shift) => adjustTaskExecutionDate(task.id, shift)}
                                 />
                             )}
                             <div className="flex items-center gap-1" title="Prioridade">
