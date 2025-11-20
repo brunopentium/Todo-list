@@ -390,9 +390,13 @@
 
                     return matchProj && matchStatus && matchSearch && matchDate;
                 }).sort((a, b) => {
-                    // Ordenar por Data (mais urgente primeiro), depois Prioridade
+                    // Ordenar por data, depois agrupar por projeto e priorizar maior prioridade/menor dificuldade
                     if (a.date !== b.date) return a.date > b.date ? 1 : -1;
-                    return b.priority - a.priority;
+                    if (a.project !== b.project) return a.project.localeCompare(b.project);
+                    if (a.priority !== b.priority) return b.priority - a.priority;
+                    const difficultyA = Number.isFinite(a.difficulty) ? a.difficulty : 0;
+                    const difficultyB = Number.isFinite(b.difficulty) ? b.difficulty : 0;
+                    return difficultyA - difficultyB;
                 });
             }, [tasks, filters, todayStr, tomorrowStr]);
 
