@@ -57,6 +57,16 @@
             return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
         };
 
+        const defaultConfig = {
+            alertYellow: 7,
+            alertOrange: 3,
+            alertRed: 1,
+            overdueColor: 'border-l-slate-900',
+            todayBg: '#fef9c3',
+            tomorrowBg: '#ffedd5',
+            deadlineBg: '#fee2e2'
+        };
+
         // --- COMPONENTS ---
 
         // 1. STATUS BADGE
@@ -93,14 +103,10 @@
             const [modalOpen, setModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
             const [expandedSubtasks, setExpandedSubtasks] = useState({});
+            const [editingDateId, setEditingDateId] = useState(null);
             
             // Configurações padrão
-            const [config, setConfig] = useState({
-                alertYellow: 7, // Dias antes
-                alertOrange: 3,
-                alertRed: 1,
-                overdueColor: 'border-l-slate-900 bg-slate-50', // Preto
-            });
+            const [config, setConfig] = useState(defaultConfig);
 
             const [filters, setFilters] = useState({
                 project: 'Todos',
@@ -124,7 +130,7 @@
                     setTasks(parsedTasks);
                 }
                 if (savedProjects) setProjects(JSON.parse(savedProjects));
-                if (savedConfig) setConfig(JSON.parse(savedConfig));
+                if (savedConfig) setConfig({ ...defaultConfig, ...JSON.parse(savedConfig) });
             }, []);
 
             useEffect(() => {
@@ -136,25 +142,35 @@
 
             // --- LOGIC ---
             
-            const getAlertLevel = (task) => {
-                if (task.status === 'Concluída' || task.status === 'Cancelada') return 'border-l-green-500'; // Sem alerta se feito
-                
-                if (!task.deadline) return 'border-l-slate-300';
+            const getDeadlineLevel = (task) => {
+                if (task.status === 'Concluída' || task.status === 'Cancelada' || !task.deadline) return null;
 
                 const today = new Date();
                 today.setHours(0,0,0,0);
                 const deadline = new Date(task.deadline);
-                deadline.setHours(0,0,0,0); // Normalizar para comparar apenas data
-                
-                const diffTime = deadline - today;
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                deadline.setHours(0,0,0,0);
 
-                if (diffDays < 0) return 'border-l-8 border-l-slate-900 bg-red-50'; // Atrasado (Preto)
-                if (diffDays <= config.alertRed) return 'border-l-8 border-l-red-500';
-                if (diffDays <= config.alertOrange) return 'border-l-8 border-l-orange-400';
-                if (diffDays <= config.alertYellow) return 'border-l-8 border-l-yellow-400';
-                
-                return 'border-l-4 border-l-blue-400'; // Normal
+                const diffTime = deadline - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays < 0) return 'overdue';
+                if (diffDays <= config.alertRed) return 'red';
+                if (diffDays <= config.alertOrange) return 'orange';
+                if (diffDays <= config.alertYellow) return 'yellow';
+                return null;
+            };
+
+            const getAlertLevel = (task) => {
+                const level = getDeadlineLevel(task);
+                if (!level) return 'border-l-4 border-l-blue-400';
+
+                const map = {
+                    overdue: `border-l-8 ${config.overdueColor}`,
+                    red: 'border-l-8 border-l-red-500',
+                    orange: 'border-l-8 border-l-orange-400',
+                    yellow: 'border-l-8 border-l-yellow-400'
+                };
+                return map[level] || 'border-l-4 border-l-blue-400';
             };
 
             const saveTask = (task) => {
@@ -228,7 +244,7 @@
                             setTasks(normalizedTasks);
                         }
                         if(data.projects) setProjects(data.projects);
-                        if(data.config) setConfig(data.config);
+                        if(data.config) setConfig({ ...defaultConfig, ...data.config });
                         alert('Backup restaurado com sucesso!');
                     } catch (err) {
                         alert('Erro ao ler arquivo.');
@@ -266,9 +282,11 @@
             }, [tasks, filters, todayStr, tomorrowStr]);
 
             const stats = {
-                today: tasks.filter(t => t.date === todayStr && t.status !== 'Concluída').length,
-                tomorrow: tasks.filter(t => t.date === tomorrowStr && t.status !== 'Concluída').length,
-                late: tasks.filter(t => t.deadline && t.deadline < todayStr && t.status !== 'Concluída').length
+                today: tasks.filter(t => t.date === todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
+                tomorrow: tasks.filter(t => t.date === tomorrowStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
+                late: tasks.filter(t => t.date < todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
+                alertYellow: tasks.filter(t => getDeadlineLevel(t) === 'yellow').length,
+                alertRed: tasks.filter(t => ['red', 'overdue'].includes(getDeadlineLevel(t))).length
             };
 
             const isExecutionAfterDeadline = (task) => {
@@ -277,11 +295,11 @@
 
             const getCardBackground = (task) => {
                 if (task.deadline && task.deadline < todayStr && task.status !== 'Concluída' && task.status !== 'Cancelada') {
-                    return 'bg-red-50';
+                    return { backgroundColor: config.deadlineBg };
                 }
-                if (task.date === todayStr) return 'bg-yellow-50';
-                if (task.date === tomorrowStr) return 'bg-amber-50';
-                return '';
+                if (task.date === todayStr) return { backgroundColor: config.todayBg };
+                if (task.date === tomorrowStr) return { backgroundColor: config.tomorrowBg };
+                return {};
             };
 
             const toggleSubtasksVisibility = (taskId) => {
@@ -317,6 +335,14 @@
                             <div className="flex justify-between items-center text-sm">
                                 <span className="text-slate-400">Atrasadas</span>
                                 <span className="bg-red-500 px-2 rounded-full text-xs font-bold">{stats.late}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Alerta Amarelo</span>
+                                <span className="bg-yellow-300 text-slate-900 px-2 rounded-full text-xs font-bold">{stats.alertYellow}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Alerta Vermelho</span>
+                                <span className="bg-red-400 text-white px-2 rounded-full text-xs font-bold">{stats.alertRed}</span>
                             </div>
                         </div>
                         
@@ -370,75 +396,90 @@
                                         <div className="text-center text-slate-400 py-10">Nenhuma tarefa encontrada.</div>
                                     )}
 
-                                    {filteredTasks.map(task => (
-                                        <div key={task.id} className={`bg-white rounded-lg shadow-sm hover:shadow transition p-3 border-l-4 ${getAlertLevel(task)} ${getCardBackground(task)} relative group`}>
-                                            <div className="flex justify-between items-start mb-1.5 gap-2">
-                                                <div className="space-y-0.5">
-                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{task.project}</span>
-                                                    <h3 className="text-base font-bold text-slate-800 leading-tight">{task.title}</h3>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    {isExecutionAfterDeadline(task) && (
-                                                        <span className="text-red-500" title="Execução após o prazo definido">
-                                                            <Icon name="alert-triangle" size={18} />
-                                                        </span>
-                                                    )}
-                                                    <button onClick={() => { setEditingTask(task); setModalOpen(true); }} className="p-1 text-slate-400 hover:text-blue-500"><Icon name="edit-2" size={16}/></button>
-                                                    <button onClick={() => deleteTask(task.id)} className="p-1 text-slate-400 hover:text-red-500"><Icon name="trash-2" size={16}/></button>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-wrap gap-y-1.5 gap-x-3 text-sm text-slate-600 mb-2">
-                                                <div className="flex items-center gap-1" title="Data Execução">
-                                                    <Icon name="calendar" size={14} />
-                                                    <span className={task.date === todayStr ? "font-bold text-blue-600" : (task.date === tomorrowStr ? "font-bold text-indigo-600" : "")}>
-                                                        {task.date === todayStr ? 'Hoje' : (task.date === tomorrowStr ? 'Amanhã' : task.date.split('-').reverse().join('/'))}
-                                                    </span>
-                                                </div>
-                                                {task.deadline && (
-                                                    <div className="flex items-center gap-1 text-red-600" title="Deadline">
-                                                        <Icon name="alert-circle" size={14} /> {task.deadline.split('-').reverse().join('/')}
+                                    {filteredTasks.map(task => {
+                                        const cardBgStyle = getCardBackground(task);
+                                        return (
+                                            <div key={task.id} style={cardBgStyle} className={`bg-white/90 rounded-lg shadow-sm hover:shadow transition p-2 border-l-4 ${getAlertLevel(task)} relative group`}>
+                                                <div className="flex justify-between items-start mb-1 gap-2">
+                                                    <div className="space-y-0.5 leading-tight">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{task.project}</span>
+                                                        <h3 className="text-sm font-bold text-slate-800 leading-tight">{task.title}</h3>
                                                     </div>
-                                                )}
-                                                <StatusBadge status={task.status} />
-                                            </div>
-
-                                            {/* Stats Row */}
-                                            <div className="flex items-center gap-3 text-xs text-slate-500 border-t border-slate-100 pt-2 mt-2">
-                                                <div className="flex items-center gap-1" title="Prioridade">
-                                                    Prioridade: <RatingDisplay value={task.priority} color="text-red-400" />
+                                                    <div className="flex items-center gap-1.5 text-slate-500">
+                                                        {isExecutionAfterDeadline(task) && (
+                                                            <span className="text-red-500" title="Execução após o prazo definido">
+                                                                <Icon name="alert-triangle" size={16} />
+                                                            </span>
+                                                        )}
+                                                        <button onClick={() => { setEditingTask(task); setModalOpen(true); }} className="p-1 text-slate-400 hover:text-blue-500"><Icon name="edit-2" size={14}/></button>
+                                                        <button onClick={() => deleteTask(task.id)} className="p-1 text-slate-400 hover:text-red-500"><Icon name="trash-2" size={14}/></button>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-1" title="Dificuldade">
-                                                    Dificuldade: <RatingDisplay value={task.difficulty} color="text-blue-400" icon="activity" />
-                                                </div>
-                                            </div>
 
-                                            {/* Subtasks */}
-                                            {task.subtasks && task.subtasks.length > 0 && (
-                                                <div className="mt-2 bg-slate-50 p-2 rounded">
-                                                    <button type="button" onClick={() => toggleSubtasksVisibility(task.id)} className="flex items-center gap-2 text-xs font-bold text-slate-500">
-                                                        <Icon name={expandedSubtasks[task.id] ? 'chevron-down' : 'chevron-right'} size={14} /> Subtarefas
-                                                    </button>
-                                                    {expandedSubtasks[task.id] && (
-                                                        <div className="mt-1 space-y-1">
-                                                            {task.subtasks.map((sub, idx) => (
-                                                                <div key={idx} className="flex items-center gap-2 text-sm leading-tight">
-                                                                    <input type="checkbox" checked={sub.completed} onChange={() => toggleSubtask(task.id, idx)} className="rounded text-blue-600" />
-                                                                    <span className={sub.completed ? "subtask-done" : ""}>{sub.text}</span>
-                                                                </div>
-                                                            ))}
+                                                <div className="flex justify-center gap-4 text-[11px] text-slate-600 mb-1">
+                                                    <div className="flex items-center gap-1" title="Prioridade">
+                                                        <span className="font-semibold text-slate-500">P:</span>
+                                                        <RatingDisplay value={task.priority} color="text-red-400" />
+                                                    </div>
+                                                    <div className="flex items-center gap-1" title="Dificuldade">
+                                                        <span className="font-semibold text-slate-500">D:</span>
+                                                        <RatingDisplay value={task.difficulty} color="text-blue-400" icon="activity" />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-y-1 gap-x-2 text-[12px] text-slate-600 items-center">
+                                                    <div className="flex items-center gap-1" title="Data Execução">
+                                                        <Icon name="calendar" size={14} />
+                                                        {editingDateId === task.id ? (
+                                                            <input
+                                                                type="date"
+                                                                className="border rounded px-2 py-1 text-[11px]"
+                                                                value={task.date}
+                                                                onChange={e => { setTasks(prev => prev.map(t => t.id === task.id ? { ...t, date: e.target.value } : t)); setEditingDateId(null); }}
+                                                                onBlur={() => setEditingDateId(null)}
+                                                                autoFocus
+                                                            />
+                                                        ) : (
+                                                            <button type="button" className={`${task.date === todayStr ? 'font-bold text-blue-600' : (task.date === tomorrowStr ? 'font-bold text-indigo-600' : 'hover:underline')}`}
+                                                                onClick={() => setEditingDateId(task.id)}>
+                                                                {task.date === todayStr ? 'Hoje' : (task.date === tomorrowStr ? 'Amanhã' : task.date.split('-').reverse().join('/'))}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {task.deadline && (
+                                                        <div className="flex items-center gap-1 text-red-600" title="Deadline">
+                                                            <Icon name="alert-circle" size={14} /> {task.deadline.split('-').reverse().join('/')}
                                                         </div>
                                                     )}
+                                                    <StatusBadge status={task.status} />
                                                 </div>
-                                            )}
 
-                                            {task.notes && (
-                                                <div className="mt-2 text-xs text-slate-500 italic leading-snug">
-                                                    Obs: {task.notes}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
+                                                {task.subtasks && task.subtasks.length > 0 && (
+                                                    <div className="mt-2 bg-slate-50/80 p-2 rounded">
+                                                        <button type="button" onClick={() => toggleSubtasksVisibility(task.id)} className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                                                            <Icon name={expandedSubtasks[task.id] ? 'chevron-down' : 'chevron-right'} size={14} /> Subtarefas
+                                                        </button>
+                                                        {expandedSubtasks[task.id] && (
+                                                            <div className="mt-1 space-y-1">
+                                                                {task.subtasks.map((sub, idx) => (
+                                                                    <div key={idx} className="flex items-center gap-2 text-sm leading-tight">
+                                                                        <input type="checkbox" checked={sub.completed} onChange={() => toggleSubtask(task.id, idx)} className="rounded text-blue-600" />
+                                                                        <span className={sub.completed ? "subtask-done" : ""}>{sub.text}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {task.notes && (
+                                                    <div className="mt-2 text-xs text-slate-500 italic leading-snug">
+                                                        Obs: {task.notes}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
@@ -463,7 +504,21 @@
                                             <input type="number" value={config.alertRed} onChange={e => setConfig({...config, alertRed: parseInt(e.target.value)})} className="border rounded p-2 w-full" />
                                         </div>
                                     </div>
-                                    <p className="text-xs text-slate-500 mt-2">Se o deadline passar, a tarefa ficará <span className="font-bold text-black">Preta</span>.</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                                        <div>
+                                            <label className="block text-sm text-slate-600 mb-1">Cor fundo Hoje</label>
+                                            <input type="color" value={config.todayBg} onChange={e => setConfig({...config, todayBg: e.target.value})} className="border rounded p-2 w-full" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm text-slate-600 mb-1">Cor fundo Amanhã</label>
+                                            <input type="color" value={config.tomorrowBg} onChange={e => setConfig({...config, tomorrowBg: e.target.value})} className="border rounded p-2 w-full" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm text-slate-600 mb-1">Cor fundo Deadline Atingido</label>
+                                            <input type="color" value={config.deadlineBg} onChange={e => setConfig({...config, deadlineBg: e.target.value})} className="border rounded p-2 w-full" />
+                                        </div>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2">Se o deadline passar, a tarefa utilizará a cor escolhida e a borda preta configurada.</p>
                                 </div>
 
                                 <div className="mb-8 border-t pt-6">
