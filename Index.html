@@ -228,13 +228,19 @@
                                 ? 'Data atual de execução'
                                 : `${offset > 0 ? 'Adiar' : 'Adiantar'} para ${targetDate.split('-').reverse().join('/')}`;
 
+                            const colorClasses = isWeekendDay
+                                ? 'text-red-500 hover:text-red-600'
+                                : isCurrent
+                                    ? 'text-blue-700'
+                                    : 'text-slate-600 hover:text-blue-600';
+
                             return (
                                 <button
                                     key={offset}
                                     type="button"
                                     disabled={disabled}
                                     onClick={() => handleSelect(offset)}
-                                    className={`min-w-[22px] h-5 text-[10px] font-semibold rounded border leading-none flex items-center justify-center transition-colors ${isCurrent ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-sm' : 'border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600'} ${isWeekendDay ? 'text-red-500' : ''} ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                                    className={`min-w-[22px] h-5 text-[10px] font-semibold rounded border leading-none flex items-center justify-center transition-colors ${isCurrent ? 'bg-blue-50 border-blue-400 shadow-sm' : 'border-slate-200 hover:border-blue-300'} ${colorClasses} ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                                     aria-label={description}
                                     title={description}
                                 >
