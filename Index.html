@@ -106,6 +106,16 @@
             return distance;
         };
 
+        const getEffectiveDate = (task) => {
+            if (!task?.date) return '';
+            if (task.status === 'Recorrente') return task.date;
+
+            const delay = Number(task.deferBusinessDays) || 0;
+            if (!delay) return task.date;
+
+            return addBusinessDays(task.date, delay);
+        };
+
         const formatDate = (year, month, day) => {
             const date = new Date(Date.UTC(year, month, day));
             return date.toISOString().split('T')[0];
@@ -189,6 +199,36 @@
             );
         };
 
+        const PostponeSelector = ({ value = 0, max = 10, onChange, disabled = false }) => {
+            const handleSelect = (count) => {
+                if (disabled) return;
+                if (onChange) onChange(value === count ? 0 : count);
+            };
+
+            return (
+                <div className="flex items-center gap-1" title="Postergar em dias úteis">
+                    <span className="text-[11px] font-semibold text-slate-500">Adiar:</span>
+                    <div className="flex space-x-0.5">
+                        {[...Array(max)].map((_, i) => {
+                            const active = i < value;
+                            return (
+                                <button
+                                    key={i}
+                                    type="button"
+                                    disabled={disabled}
+                                    onClick={() => handleSelect(i + 1)}
+                                    className={`text-xs leading-none ${active ? 'text-blue-500' : 'text-slate-300'} ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:scale-110 transition-transform'}`}
+                                    aria-label={`Postergar ${i + 1} ${i + 1 === 1 ? 'dia útil' : 'dias úteis'}`}
+                                >
+                                    ➤
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
         // 3. MAIN APP
         function App() {
             // --- STATE ---
@@ -224,7 +264,8 @@
             const normalizeTask = (task) => ({
                 ...task,
                 status: task.status === 'Pendente' ? 'Em Andamento' : task.status,
-                recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) }
+                recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) },
+                deferBusinessDays: Number(task.deferBusinessDays) || 0
             });
 
             const toggleNotesVisibility = (taskId) => {
@@ -505,6 +546,7 @@
 
             const filteredTasks = useMemo(() => {
                 return tasks.filter(t => {
+                    const executionDate = getEffectiveDate(t);
                     const matchProj = filters.project === 'Todos' || t.project === filters.project;
                     const matchStatus = filters.status === 'Todos'
                         || (filters.status === 'Aberta' ? ['Em Andamento', 'Recorrente'].includes(t.status) : t.status === filters.status);
@@ -512,18 +554,20 @@
                     let matchDate = true;
 
                     if (filters.dateFilter === 'Hoje') {
-                        matchDate = t.date === todayStr;
+                        matchDate = executionDate === todayStr;
                     } else if (filters.dateFilter === 'Amanhã') {
-                        matchDate = t.date === tomorrowStr;
+                        matchDate = executionDate === tomorrowStr;
                     } else if (filters.dateFilter === 'Período') {
-                        if (filters.startDate && t.date < filters.startDate) matchDate = false;
-                        if (filters.endDate && t.date > filters.endDate) matchDate = false;
+                        if (filters.startDate && executionDate && executionDate < filters.startDate) matchDate = false;
+                        if (filters.endDate && executionDate && executionDate > filters.endDate) matchDate = false;
                     }
 
                     return matchProj && matchStatus && matchSearch && matchDate;
                 }).sort((a, b) => {
                     // Ordenar por data, depois agrupar por projeto e priorizar maior prioridade/menor dificuldade
-                    if (a.date !== b.date) return a.date > b.date ? 1 : -1;
+                    const dateA = getEffectiveDate(a);
+                    const dateB = getEffectiveDate(b);
+                    if (dateA !== dateB) return dateA > dateB ? 1 : -1;
                     if (a.project !== b.project) return a.project.localeCompare(b.project);
                     if (a.priority !== b.priority) return b.priority - a.priority;
                     const difficultyA = Number.isFinite(a.difficulty) ? a.difficulty : 0;
@@ -533,9 +577,12 @@
             }, [tasks, filters, todayStr, tomorrowStr]);
 
             const stats = {
-                today: tasks.filter(t => t.date === todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
-                tomorrow: tasks.filter(t => t.date === tomorrowStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
-                late: tasks.filter(t => t.date < todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
+                today: tasks.filter(t => getEffectiveDate(t) === todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
+                tomorrow: tasks.filter(t => getEffectiveDate(t) === tomorrowStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
+                late: tasks.filter(t => {
+                    const executionDate = getEffectiveDate(t);
+                    return executionDate && executionDate < todayStr && !['Concluída', 'Cancelada'].includes(t.status);
+                }).length,
                 alertOrange: tasks.filter(t => getDeadlineLevel(t) === 'orange').length,
                 alertRed: tasks.filter(t => ['red', 'overdue'].includes(getDeadlineLevel(t))).length
             };
@@ -544,13 +591,16 @@
 
             const isExecutionAfterDeadline = (task) => {
                 if (task.status === 'Recorrente') return false;
-                return task.deadline && task.date > task.deadline;
+                const executionDate = getEffectiveDate(task);
+                return task.deadline && executionDate && executionDate > task.deadline;
             };
 
             const getConflictReasons = (task) => {
                 const reasons = [];
 
-                if (task.status === 'Recorrente' && task.date && task.date < todayStr) {
+                const executionDate = getEffectiveDate(task);
+
+                if (task.status === 'Recorrente' && executionDate && executionDate < todayStr) {
                     reasons.push('Recorrência vencida');
                 }
 
@@ -563,7 +613,7 @@
                     reasons.push('Alerta laranja de deadline');
                 }
 
-                if (isPendingTask(task) && task.date && task.date < todayStr) {
+                if (isPendingTask(task) && executionDate && executionDate < todayStr) {
                     reasons.push('Tarefa atrasada');
                 }
 
@@ -581,13 +631,14 @@
             }, [tasks, todayStr, config]);
 
             const getCardBackground = (task) => {
+                const executionDate = getEffectiveDate(task);
                 if (task.status !== 'Recorrente') {
                     if (task.deadline && task.deadline < todayStr && task.status !== 'Concluída' && task.status !== 'Cancelada') {
                         return { backgroundColor: config.deadlineBg };
                     }
                 }
-                if (task.date === todayStr) return { backgroundColor: config.todayBg };
-                if (task.date === tomorrowStr) return { backgroundColor: config.tomorrowBg };
+                if (executionDate === todayStr) return { backgroundColor: config.todayBg };
+                if (executionDate === tomorrowStr) return { backgroundColor: config.tomorrowBg };
                 return {};
             };
 
@@ -675,6 +726,16 @@
 
             const renderTaskCard = (task, conflictReasons = []) => {
                 const cardBgStyle = getCardBackground(task);
+                const executionDate = getEffectiveDate(task);
+                const postponeDays = Number(task.deferBusinessDays) || 0;
+                const executionLabel = executionDate
+                    ? (executionDate === todayStr
+                        ? 'Hoje'
+                        : (executionDate === tomorrowStr
+                            ? 'Amanhã'
+                            : executionDate.split('-').reverse().join('/')))
+                    : 'Sem data';
+                const baseDateLabel = task.date ? task.date.split('-').reverse().join('/') : '';
                 return (
                     <div key={task.id} style={cardBgStyle} className={`bg-white/90 rounded-lg shadow-sm hover:shadow transition p-1.5 border-l-4 ${getAlertLevel(task)} relative group`}>
                         {conflictReasons.length > 0 && (
@@ -767,10 +828,19 @@
                                         autoFocus
                                     />
                                 ) : (
-                                    <button type="button" className={`${task.date === todayStr ? 'font-bold text-blue-600' : (task.date === tomorrowStr ? 'font-bold text-indigo-600' : 'hover:underline')}`}
-                                        onClick={() => setEditingDateId(task.id)}>
-                                        {task.date === todayStr ? 'Hoje' : (task.date === tomorrowStr ? 'Amanhã' : task.date.split('-').reverse().join('/'))}
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            className={`${executionDate === todayStr ? 'font-bold text-blue-600' : (executionDate === tomorrowStr ? 'font-bold text-indigo-600' : 'hover:underline')}`}
+                                            onClick={() => setEditingDateId(task.id)}
+                                            title={postponeDays ? `Data base: ${baseDateLabel}` : undefined}
+                                        >
+                                            {executionLabel}
+                                        </button>
+                                        {postponeDays > 0 && (
+                                            <span className="text-[11px] font-semibold text-blue-600">+{postponeDays}d úteis</span>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             {task.deadline && (
@@ -805,6 +875,12 @@
                                     </div>
                                 )}
                             </div>
+                            {task.status !== 'Recorrente' && (
+                                <PostponeSelector
+                                    value={postponeDays}
+                                    onChange={(val) => updateTaskField(task.id, 'deferBusinessDays', val)}
+                                />
+                            )}
                             <div className="flex items-center gap-1" title="Prioridade">
                                 <Icon name="flag" size={14} />
                                 <span className="font-semibold">{task.priority}/5</span>
@@ -1142,6 +1218,7 @@
                 status: 'Em Andamento',
                 priority: 3,
                 difficulty: 3,
+                deferBusinessDays: 0,
                 notes: '',
                 subtasks: [],
                 recurrence: { ...defaultRecurrence }
