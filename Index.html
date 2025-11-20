@@ -49,6 +49,45 @@
             return date.toISOString().split('T')[0];
         };
 
+        const isWeekend = (dateStr) => {
+            const day = new Date(dateStr + 'T00:00:00').getDay();
+            return day === 0 || day === 6;
+        };
+
+        const addBusinessDays = (dateStr, businessDays) => {
+            if (businessDays <= 0) return dateStr;
+
+            let current = dateStr;
+            let remaining = businessDays;
+
+            while (remaining > 0) {
+                current = addDays(current, 1);
+                if (!isWeekend(current)) {
+                    remaining -= 1;
+                }
+            }
+
+            return current;
+        };
+
+        const getNextBusinessDay = (dateStr) => {
+            return isWeekend(dateStr) ? addBusinessDays(dateStr, 1) : dateStr;
+        };
+
+        const getBusinessDayShift = (fromDateStr, toDateStr) => {
+            if (!fromDateStr || !toDateStr || toDateStr <= fromDateStr) return 0;
+
+            let current = fromDateStr;
+            let shift = 0;
+
+            while (current < toDateStr) {
+                current = addBusinessDays(current, 1);
+                shift += 1;
+            }
+
+            return shift;
+        };
+
         const formatDate = (year, month, day) => {
             const date = new Date(Date.UTC(year, month, day));
             return date.toISOString().split('T')[0];
@@ -346,16 +385,64 @@
                 setTasks(newTasks);
             };
 
-            const shiftAllTasks = (days) => {
+            const shiftAllTasks = (days, useBusinessDays = true) => {
                 if (days === 0) return;
-                if (!confirm(`Deseja adiar todas as tarefas pendentes em ${days} dias?`)) return;
+
+                const label = useBusinessDays ? `${days} dia${days > 1 ? 's úteis' : ' útil'}` : `${days} dia${days > 1 ? 's' : ''}`;
+                if (!confirm(`Deseja adiar todas as tarefas pendentes em ${label}?`)) return;
+
+                const shiftDate = (dateStr) => useBusinessDays ? addBusinessDays(dateStr, parseInt(days)) : addDays(dateStr, parseInt(days));
+
+                const fallbackDate = getNextBusinessDay(getTodayStr());
 
                 const newTasks = tasks.map(t => {
                     if (t.status !== 'Concluída' && t.status !== 'Cancelada') {
-                        return { ...t, date: addDays(t.date, parseInt(days)) };
+                        const baseDate = t.date || fallbackDate;
+                        return { ...t, date: shiftDate(baseDate) };
                     }
                     return t;
                 });
+                setTasks(newTasks);
+                alert('Tarefas reprogramadas com sucesso!');
+            };
+
+            const shiftTasksFromEarliest = (targetDateStr, label) => {
+                const pendingTasks = tasks.filter(t => t.status !== 'Concluída' && t.status !== 'Cancelada');
+                if (pendingTasks.length === 0) {
+                    alert('Não há tarefas pendentes para reprogramar.');
+                    return;
+                }
+
+                const earliestDate = pendingTasks.reduce((earliest, task) => {
+                    if (!task.date) return earliest;
+                    if (!earliest || task.date < earliest) return task.date;
+                    return earliest;
+                }, null);
+
+                if (!earliestDate) {
+                    alert('Não há datas definidas para reprogramar.');
+                    return;
+                }
+
+                const shift = getBusinessDayShift(earliestDate, targetDateStr);
+
+                if (shift === 0) {
+                    alert('As tarefas já estão alinhadas com a data escolhida.');
+                    return;
+                }
+
+                if (!confirm(`Deseja reprogramar todas as tarefas pendentes para começar ${label}?`)) return;
+
+                const fallbackDate = getNextBusinessDay(getTodayStr());
+
+                const newTasks = tasks.map(t => {
+                    if (t.status !== 'Concluída' && t.status !== 'Cancelada') {
+                        const baseDate = t.date || fallbackDate;
+                        return { ...t, date: addBusinessDays(baseDate, shift) };
+                    }
+                    return t;
+                });
+
                 setTasks(newTasks);
                 alert('Tarefas reprogramadas com sucesso!');
             };
@@ -394,6 +481,8 @@
             // --- FILTRAGEM ---
             const todayStr = getTodayStr();
             const tomorrowStr = addDays(todayStr, 1);
+            const businessToday = getNextBusinessDay(todayStr);
+            const businessTomorrow = addBusinessDays(businessToday, 1);
 
             const filteredTasks = useMemo(() => {
                 return tasks.filter(t => {
@@ -881,10 +970,12 @@
                                 <div className="mb-8 border-t pt-6">
                                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="calendar-clock" className="text-blue-500" /> Reprogramação em Massa (Shift)</h3>
                                     <p className="text-sm text-slate-600 mb-3">Empurrar data de execução de todas as tarefas pendentes.</p>
-                                    <div className="flex gap-2">
+                                    <div className="flex flex-wrap gap-2">
                                         <button onClick={() => shiftAllTasks(1)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200">+1 Dia</button>
                                         <button onClick={() => shiftAllTasks(3)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200">+3 Dias</button>
-                                        <button onClick={() => shiftAllTasks(7)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200">+1 Semana</button>
+                                        <button onClick={() => shiftAllTasks(7, false)} className="bg-blue-100 text-blue-700 px-4 py-2 rounded hover:bg-blue-200">+1 Semana</button>
+                                        <button onClick={() => shiftTasksFromEarliest(businessToday, 'a partir de hoje')} className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded hover:bg-indigo-200">A partir de hoje</button>
+                                        <button onClick={() => shiftTasksFromEarliest(businessTomorrow, 'a partir de amanhã')} className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded hover:bg-indigo-200">A partir de amanhã</button>
                                     </div>
                                 </div>
 
