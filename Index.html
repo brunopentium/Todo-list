@@ -89,6 +89,23 @@
             return shift;
         };
 
+        const getBusinessDayDistance = (fromDateStr, toDateStr) => {
+            if (!fromDateStr || !toDateStr || fromDateStr === toDateStr) return 0;
+
+            const step = toDateStr > fromDateStr ? 1 : -1;
+            let current = fromDateStr;
+            let distance = 0;
+
+            while (current !== toDateStr) {
+                current = addDays(current, step);
+                if (!isWeekend(current)) {
+                    distance += step;
+                }
+            }
+
+            return distance;
+        };
+
         const formatDate = (year, month, day) => {
             const date = new Date(Date.UTC(year, month, day));
             return date.toISOString().split('T')[0];
@@ -311,18 +328,15 @@
                 if (task.status === 'Recorrente') return null;
                 if (task.status === 'Concluída' || task.status === 'Cancelada' || !task.deadline) return null;
 
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                const deadline = new Date(task.deadline);
-                deadline.setHours(0,0,0,0);
+                const todayStr = getTodayStr();
 
-                const diffTime = deadline - today;
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (task.deadline < todayStr) return 'overdue';
 
-                if (diffDays < 0) return 'overdue';
-                if (diffDays <= config.alertRed) return 'red';
-                if (diffDays <= config.alertOrange) return 'orange';
-                if (diffDays <= config.alertYellow) return 'yellow';
+                const diffBusinessDays = getBusinessDayDistance(todayStr, task.deadline);
+
+                if (diffBusinessDays <= config.alertRed) return 'red';
+                if (diffBusinessDays <= config.alertOrange) return 'orange';
+                if (diffBusinessDays <= config.alertYellow) return 'yellow';
                 return null;
             };
 
@@ -522,7 +536,7 @@
                 today: tasks.filter(t => t.date === todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
                 tomorrow: tasks.filter(t => t.date === tomorrowStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
                 late: tasks.filter(t => t.date < todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
-                alertYellow: tasks.filter(t => getDeadlineLevel(t) === 'yellow').length,
+                alertOrange: tasks.filter(t => getDeadlineLevel(t) === 'orange').length,
                 alertRed: tasks.filter(t => ['red', 'overdue'].includes(getDeadlineLevel(t))).length
             };
 
@@ -920,8 +934,8 @@
                                 <span className="bg-red-500 px-2 rounded-full text-xs font-bold">{stats.late}</span>
                             </div>
                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-400">Alerta Amarelo</span>
-                                <span className="bg-yellow-300 text-slate-900 px-2 rounded-full text-xs font-bold">{stats.alertYellow}</span>
+                                <span className="text-slate-400">Alerta Laranja</span>
+                                <span className="bg-orange-300 text-slate-900 px-2 rounded-full text-xs font-bold">{stats.alertOrange}</span>
                             </div>
                             <div className="flex justify-between items-center text-sm">
                                 <span className="text-slate-400">Alerta Vermelho</span>
