@@ -81,15 +81,24 @@
             return <span className={`px-2 py-1 rounded-full text-xs font-bold ${colors[status] || colors['Pendente']}`}>{status}</span>;
         };
 
-        // 2. RATING DISPLAY (Priority/Difficulty)
-        const RatingDisplay = ({ value, max = 5, icon = "star", color = "text-yellow-500" }) => {
+        // 2. RATING DISPLAY / EDITOR (Priority/Difficulty)
+        const RatingDisplay = ({ value, max = 5, color = "text-yellow-500", onChange, label }) => {
             return (
-                <div className="flex space-x-0.5">
-                    {[...Array(max)].map((_, i) => (
-                        <span key={i} className={i < value ? color : "text-slate-300"}>
-                            ●
-                        </span>
-                    ))}
+                <div className="flex items-center gap-1">
+                    {label && <span className="font-semibold text-slate-500">{label}</span>}
+                    <div className="flex space-x-0.5">
+                        {[...Array(max)].map((_, i) => (
+                            <button
+                                key={i}
+                                type="button"
+                                onClick={() => onChange && onChange(i + 1)}
+                                className={`text-xs leading-none ${i < value ? color : "text-slate-300"} ${onChange ? 'hover:scale-110 transition-transform' : ''}`}
+                                aria-label={onChange ? `${label || 'Nível'} ${i + 1}` : undefined}
+                            >
+                                ●
+                            </button>
+                        ))}
+                    </div>
                 </div>
             );
         };
@@ -104,6 +113,7 @@
             const [editingTask, setEditingTask] = useState(null);
             const [expandedSubtasks, setExpandedSubtasks] = useState({});
             const [editingDateId, setEditingDateId] = useState(null);
+            const [editingDeadlineId, setEditingDeadlineId] = useState(null);
             
             // Configurações padrão
             const [config, setConfig] = useState(defaultConfig);
@@ -171,6 +181,10 @@
                     yellow: 'border-l-8 border-l-yellow-400'
                 };
                 return map[level] || 'border-l-4 border-l-blue-400';
+            };
+
+            const updateTaskField = (id, field, value) => {
+                setTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
             };
 
             const saveTask = (task) => {
@@ -399,10 +413,26 @@
                                     {filteredTasks.map(task => {
                                         const cardBgStyle = getCardBackground(task);
                                         return (
-                                            <div key={task.id} style={cardBgStyle} className={`bg-white/90 rounded-lg shadow-sm hover:shadow transition p-2 border-l-4 ${getAlertLevel(task)} relative group`}>
+                                            <div key={task.id} style={cardBgStyle} className={`bg-white/90 rounded-lg shadow-sm hover:shadow transition p-1.5 border-l-4 ${getAlertLevel(task)} relative group`}>
                                                 <div className="flex justify-between items-start mb-1 gap-2">
-                                                    <div className="space-y-0.5 leading-tight">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{task.project}</span>
+                                                    <div className="flex-1 space-y-1 leading-tight">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{task.project}</span>
+                                                            <div className="flex items-center gap-2 text-[11px] text-slate-600">
+                                                                <RatingDisplay
+                                                                    label="P:"
+                                                                    value={task.priority}
+                                                                    color="text-red-400"
+                                                                    onChange={(val) => updateTaskField(task.id, 'priority', val)}
+                                                                />
+                                                                <RatingDisplay
+                                                                    label="D:"
+                                                                    value={task.difficulty}
+                                                                    color="text-blue-400"
+                                                                    onChange={(val) => updateTaskField(task.id, 'difficulty', val)}
+                                                                />
+                                                            </div>
+                                                        </div>
                                                         <h3 className="text-sm font-bold text-slate-800 leading-tight">{task.title}</h3>
                                                     </div>
                                                     <div className="flex items-center gap-1.5 text-slate-500">
@@ -416,17 +446,6 @@
                                                     </div>
                                                 </div>
 
-                                                <div className="flex justify-center gap-4 text-[11px] text-slate-600 mb-1">
-                                                    <div className="flex items-center gap-1" title="Prioridade">
-                                                        <span className="font-semibold text-slate-500">P:</span>
-                                                        <RatingDisplay value={task.priority} color="text-red-400" />
-                                                    </div>
-                                                    <div className="flex items-center gap-1" title="Dificuldade">
-                                                        <span className="font-semibold text-slate-500">D:</span>
-                                                        <RatingDisplay value={task.difficulty} color="text-blue-400" icon="activity" />
-                                                    </div>
-                                                </div>
-
                                                 <div className="flex flex-wrap gap-y-1 gap-x-2 text-[12px] text-slate-600 items-center">
                                                     <div className="flex items-center gap-1" title="Data Execução">
                                                         <Icon name="calendar" size={14} />
@@ -435,7 +454,7 @@
                                                                 type="date"
                                                                 className="border rounded px-2 py-1 text-[11px]"
                                                                 value={task.date}
-                                                                onChange={e => { setTasks(prev => prev.map(t => t.id === task.id ? { ...t, date: e.target.value } : t)); setEditingDateId(null); }}
+                                                                onChange={e => { updateTaskField(task.id, 'date', e.target.value); setEditingDateId(null); }}
                                                                 onBlur={() => setEditingDateId(null)}
                                                                 autoFocus
                                                             />
@@ -448,7 +467,22 @@
                                                     </div>
                                                     {task.deadline && (
                                                         <div className="flex items-center gap-1 text-red-600" title="Deadline">
-                                                            <Icon name="alert-circle" size={14} /> {task.deadline.split('-').reverse().join('/')}
+                                                            <Icon name="alert-circle" size={14} />
+                                                            {editingDeadlineId === task.id ? (
+                                                                <input
+                                                                    type="date"
+                                                                    className="border rounded px-2 py-1 text-[11px]"
+                                                                    value={task.deadline}
+                                                                    onChange={e => { updateTaskField(task.id, 'deadline', e.target.value); setEditingDeadlineId(null); }}
+                                                                    onBlur={() => setEditingDeadlineId(null)}
+                                                                    autoFocus
+                                                                />
+                                                            ) : (
+                                                                <button type="button" className="hover:underline"
+                                                                    onClick={() => setEditingDeadlineId(task.id)}>
+                                                                    {task.deadline.split('-').reverse().join('/')}
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
                                                     <StatusBadge status={task.status} />
