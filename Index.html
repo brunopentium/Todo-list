@@ -49,6 +49,15 @@
             return date.toISOString().split('T')[0];
         };
 
+        const formatDate = (year, month, day) => {
+            const date = new Date(Date.UTC(year, month, day));
+            return date.toISOString().split('T')[0];
+        };
+
+        const getDaysInMonth = (year, month) => {
+            return new Date(year, month + 1, 0).getDate();
+        };
+
         // --- ICONS (Lucide wrapper for React) ---
         const Icon = ({ name, size = 20, className = "" }) => {
             useEffect(() => {
@@ -66,6 +75,14 @@
             tomorrowBg: '#ffedd5',
             deadlineBg: '#fee2e2'
         };
+
+        const defaultRecurrence = {
+            frequency: 'Nenhuma',
+            daysOfWeek: [],
+            daysOfMonth: []
+        };
+
+        const WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
         // --- COMPONENTS ---
 
@@ -127,16 +144,90 @@
                 endDate: ''
             });
 
+            const normalizeTask = (task) => ({
+                ...task,
+                status: task.status === 'Pendente' ? 'Em Andamento' : task.status,
+                recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) }
+            });
+
+            const getNextRecurrenceDate = (task) => {
+                const recurrence = { ...defaultRecurrence, ...(task.recurrence || {}) };
+                if (task.status !== 'Recorrente' || recurrence.frequency === 'Nenhuma') return null;
+
+                const baseDate = task.date || getTodayStr();
+
+                if (recurrence.frequency === 'Diária') {
+                    return addDays(baseDate, 1);
+                }
+
+                if (recurrence.frequency === 'Semanal') {
+                    const days = (recurrence.daysOfWeek || []).map(Number);
+                    if (days.length === 0) return null;
+                    for (let i = 1; i <= 14; i++) {
+                        const candidateStr = addDays(baseDate, i);
+                        const day = new Date(candidateStr + 'T00:00:00').getDay();
+                        if (days.includes(day)) return candidateStr;
+                    }
+                    return null;
+                }
+
+                if (recurrence.frequency === 'Mensal') {
+                    const days = (recurrence.daysOfMonth || [])
+                        .map(Number)
+                        .filter(d => d >= 1 && d <= 31)
+                        .sort((a, b) => a - b);
+
+                    if (days.length === 0) return null;
+
+                    const currentDate = new Date(baseDate + 'T00:00:00');
+                    const currentDay = currentDate.getDate();
+                    const year = currentDate.getFullYear();
+                    const month = currentDate.getMonth();
+                    const daysInMonth = getDaysInMonth(year, month);
+
+                    const nextDaySameMonth = days.find(d => d > currentDay && d <= daysInMonth);
+                    if (nextDaySameMonth) {
+                        return formatDate(year, month, nextDaySameMonth);
+                    }
+
+                    let nextMonth = month + 1;
+                    let nextYear = year;
+                    if (nextMonth > 11) {
+                        nextMonth = 0;
+                        nextYear += 1;
+                    }
+
+                    const nextMonthDays = getDaysInMonth(nextYear, nextMonth);
+                    const validDay = days.find(d => d <= nextMonthDays) || nextMonthDays;
+                    return formatDate(nextYear, nextMonth, validDay);
+                }
+
+                return null;
+            };
+
+            const recurrenceDescription = (recurrence) => {
+                const data = { ...defaultRecurrence, ...(recurrence || {}) };
+                if (data.frequency === 'Diária') return 'Diária';
+                if (data.frequency === 'Semanal') {
+                    const days = (data.daysOfWeek || []).map(Number).sort((a, b) => a - b);
+                    if (!days.length) return 'Semanal';
+                    return `Semanal (${days.map(d => WEEKDAY_LABELS[d]).join(', ')})`;
+                }
+                if (data.frequency === 'Mensal') {
+                    const days = (data.daysOfMonth || []).map(Number).filter(Boolean).sort((a, b) => a - b);
+                    if (!days.length) return 'Mensal';
+                    return `Mensal (dias ${days.join(', ')})`;
+                }
+                return 'Sem recorrência';
+            };
+
             // --- PERSISTENCE ---
             useEffect(() => {
                 const savedTasks = localStorage.getItem('tm_tasks');
                 const savedProjects = localStorage.getItem('tm_projects');
                 const savedConfig = localStorage.getItem('tm_config');
                 if (savedTasks) {
-                    const parsedTasks = JSON.parse(savedTasks).map(t => ({
-                        ...t,
-                        status: t.status === 'Pendente' ? 'Em Andamento' : t.status
-                    }));
+                    const parsedTasks = JSON.parse(savedTasks).map(t => normalizeTask(t));
                     setTasks(parsedTasks);
                 }
                 if (savedProjects) setProjects(JSON.parse(savedProjects));
@@ -153,6 +244,7 @@
             // --- LOGIC ---
             
             const getDeadlineLevel = (task) => {
+                if (task.status === 'Recorrente') return null;
                 if (task.status === 'Concluída' || task.status === 'Cancelada' || !task.deadline) return null;
 
                 const today = new Date();
@@ -171,6 +263,7 @@
             };
 
             const getAlertLevel = (task) => {
+                if (task.status === 'Recorrente') return 'border-l-8 border-l-slate-400';
                 const level = getDeadlineLevel(task);
                 if (!level) return 'border-l-4 border-l-blue-400';
 
@@ -187,11 +280,22 @@
                 setTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
             };
 
+            const advanceRecurrence = (task) => {
+                const nextDate = getNextRecurrenceDate(task);
+                if (!nextDate) {
+                    alert('Configure a recorrência desta tarefa para avançar.');
+                    return;
+                }
+                updateTaskField(task.id, 'date', nextDate);
+            };
+
             const saveTask = (task) => {
+                const normalized = normalizeTask(task);
+
                 if (task.id) {
-                    setTasks(tasks.map(t => t.id === task.id ? task : t));
+                    setTasks(tasks.map(t => t.id === task.id ? normalized : t));
                 } else {
-                    setTasks([...tasks, { ...task, id: generateId() }]);
+                    setTasks([...tasks, { ...normalized, id: generateId() }]);
                 }
                 // Adicionar projeto se for novo
                 if (!projects.includes(task.project)) {
@@ -251,10 +355,7 @@
                     try {
                         const data = JSON.parse(e.target.result);
                         if(data.tasks) {
-                            const normalizedTasks = data.tasks.map(t => ({
-                                ...t,
-                                status: t.status === 'Pendente' ? 'Em Andamento' : t.status
-                            }));
+                            const normalizedTasks = data.tasks.map(t => normalizeTask(t));
                             setTasks(normalizedTasks);
                         }
                         if(data.projects) setProjects(data.projects);
@@ -304,12 +405,15 @@
             };
 
             const isExecutionAfterDeadline = (task) => {
+                if (task.status === 'Recorrente') return false;
                 return task.deadline && task.date > task.deadline;
             };
 
             const getCardBackground = (task) => {
-                if (task.deadline && task.deadline < todayStr && task.status !== 'Concluída' && task.status !== 'Cancelada') {
-                    return { backgroundColor: config.deadlineBg };
+                if (task.status !== 'Recorrente') {
+                    if (task.deadline && task.deadline < todayStr && task.status !== 'Concluída' && task.status !== 'Cancelada') {
+                        return { backgroundColor: config.deadlineBg };
+                    }
                 }
                 if (task.date === todayStr) return { backgroundColor: config.todayBg };
                 if (task.date === tomorrowStr) return { backgroundColor: config.tomorrowBg };
@@ -441,6 +545,12 @@
                                                                 <Icon name="alert-triangle" size={16} />
                                                             </span>
                                                         )}
+                                                        {task.status === 'Recorrente' && (
+                                                            <button onClick={() => advanceRecurrence(task)} className="p-1 text-slate-400 hover:text-slate-600 flex items-center gap-1" title="Ir para a próxima ocorrência">
+                                                                <Icon name="fast-forward" size={14} />
+                                                                <span className="text-[11px] font-semibold">Próxima</span>
+                                                            </button>
+                                                        )}
                                                         <button onClick={() => { setEditingTask(task); setModalOpen(true); }} className="p-1 text-slate-400 hover:text-blue-500"><Icon name="edit-2" size={14}/></button>
                                                         <button onClick={() => deleteTask(task.id)} className="p-1 text-slate-400 hover:text-red-500"><Icon name="trash-2" size={14}/></button>
                                                     </div>
@@ -487,6 +597,13 @@
                                                     )}
                                                     <StatusBadge status={task.status} />
                                                 </div>
+
+                                                {task.status === 'Recorrente' && (
+                                                    <div className="mt-1 text-[12px] text-slate-600 flex items-center gap-2">
+                                                        <Icon name="refresh-cw" size={14} />
+                                                        <span>{recurrenceDescription(task.recurrence)}</span>
+                                                    </div>
+                                                )}
 
                                                 {task.subtasks && task.subtasks.length > 0 && (
                                                     <div className="mt-2 bg-slate-50/80 p-2 rounded">
@@ -601,7 +718,7 @@
 
         // 4. TASK FORM COMPONENT
         function TaskForm({ task, projects, onSave, onCancel }) {
-            const [formData, setFormData] = useState(task || {
+            const initialTask = task ? { ...task, recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) } } : {
                 title: '',
                 project: projects[0] || 'Geral',
                 date: getTodayStr(),
@@ -610,17 +727,58 @@
                 priority: 3,
                 difficulty: 3,
                 notes: '',
-                subtasks: []
-            });
+                subtasks: [],
+                recurrence: { ...defaultRecurrence }
+            };
+
+            const [formData, setFormData] = useState(initialTask);
 
             const [newProject, setNewProject] = useState('');
             const [showNewProjInput, setShowNewProjInput] = useState(false);
             const [tempSubtask, setTempSubtask] = useState('');
+            const [monthDaysInput, setMonthDaysInput] = useState((initialTask.recurrence?.daysOfMonth || []).join(','));
+
+            useEffect(() => {
+                setFormData(task ? { ...task, recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) } } : initialTask);
+                setMonthDaysInput(((task && task.recurrence?.daysOfMonth) || initialTask.recurrence?.daysOfMonth || []).join(','));
+            }, [task]);
+
+            const updateRecurrence = (changes) => {
+                setFormData(prev => ({
+                    ...prev,
+                    recurrence: { ...defaultRecurrence, ...(prev.recurrence || {}), ...changes }
+                }));
+            };
 
             const submitForm = () => {
+                let recurrenceData = { ...defaultRecurrence, ...(formData.recurrence || {}) };
+
+                if (formData.status === 'Recorrente') {
+                    if (recurrenceData.frequency === 'Mensal') {
+                        const parsed = monthDaysInput
+                            .split(',')
+                            .map(v => parseInt(v.trim()))
+                            .filter(v => !isNaN(v) && v >= 1 && v <= 31);
+                        recurrenceData = { ...recurrenceData, daysOfMonth: parsed };
+                    }
+
+                    if (recurrenceData.frequency === 'Semanal' && (!recurrenceData.daysOfWeek || recurrenceData.daysOfWeek.length === 0)) {
+                        alert('Escolha pelo menos um dia da semana para a recorrência.');
+                        return;
+                    }
+
+                    if (recurrenceData.frequency === 'Mensal' && (!recurrenceData.daysOfMonth || recurrenceData.daysOfMonth.length === 0)) {
+                        alert('Informe pelo menos um dia do mês para a recorrência.');
+                        return;
+                    }
+                } else {
+                    recurrenceData = { ...defaultRecurrence };
+                }
+
                 onSave({
                     ...formData,
-                    project: showNewProjInput && newProject ? newProject : formData.project
+                    project: showNewProjInput && newProject ? newProject : formData.project,
+                    recurrence: recurrenceData
                 });
             };
 
@@ -685,6 +843,72 @@
                                 <option>Cancelada</option>
                             </select>
                         </div>
+
+                        {formData.status === 'Recorrente' && (
+                            <div className="col-span-2 bg-slate-50 border border-slate-200 p-3 rounded space-y-3">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Frequência da Recorrência</label>
+                                    <select
+                                        className="w-full border p-2 rounded"
+                                        value={formData.recurrence?.frequency || 'Nenhuma'}
+                                        onChange={e => updateRecurrence({ frequency: e.target.value })}
+                                    >
+                                        <option value="Nenhuma">Selecione</option>
+                                        <option value="Diária">Diária</option>
+                                        <option value="Semanal">Semanal</option>
+                                        <option value="Mensal">Mensal</option>
+                                    </select>
+                                </div>
+
+                                {formData.recurrence?.frequency === 'Semanal' && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Dias da Semana</label>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                            {WEEKDAY_LABELS.map((day, idx) => {
+                                                const selected = (formData.recurrence?.daysOfWeek || []).includes(idx);
+                                                return (
+                                                    <label key={day} className={`flex items-center gap-2 p-2 border rounded cursor-pointer ${selected ? 'bg-blue-50 border-blue-300' : 'bg-white'}`}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selected}
+                                                            onChange={() => {
+                                                                const current = formData.recurrence?.daysOfWeek || [];
+                                                                const next = current.includes(idx) ? current.filter(d => d !== idx) : [...current, idx];
+                                                                updateRecurrence({ daysOfWeek: next });
+                                                            }}
+                                                        />
+                                                        {day}
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {formData.recurrence?.frequency === 'Mensal' && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Dias do Mês (separe com vírgula)</label>
+                                        <input
+                                            type="text"
+                                            className="w-full border p-2 rounded"
+                                            placeholder="Ex: 1, 15, 30"
+                                            value={monthDaysInput}
+                                            onChange={e => {
+                                                setMonthDaysInput(e.target.value);
+                                                const parsed = e.target.value
+                                                    .split(',')
+                                                    .map(v => parseInt(v.trim()))
+                                                    .filter(v => !isNaN(v) && v >= 1 && v <= 31);
+                                                updateRecurrence({ daysOfMonth: parsed });
+                                            }}
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">A tarefa irá para o próximo dia informado ao clicar em "Próxima".</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+
 
                         <div>
                             <label className="block text-sm font-bold text-slate-700 mb-1">Data Execução</label>
