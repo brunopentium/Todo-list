@@ -137,7 +137,7 @@
 
             const [filters, setFilters] = useState({
                 project: 'Todos',
-                status: 'Todos',
+                status: 'Aberta',
                 search: '',
                 dateFilter: 'Todos',
                 startDate: '',
@@ -375,7 +375,8 @@
             const filteredTasks = useMemo(() => {
                 return tasks.filter(t => {
                     const matchProj = filters.project === 'Todos' || t.project === filters.project;
-                    const matchStatus = filters.status === 'Todos' || t.status === filters.status;
+                    const matchStatus = filters.status === 'Todos'
+                        || (filters.status === 'Aberta' ? ['Em Andamento', 'Recorrente'].includes(t.status) : t.status === filters.status);
                     const matchSearch = t.title.toLowerCase().includes(filters.search.toLowerCase());
                     let matchDate = true;
 
@@ -487,9 +488,11 @@
                                         </select>
                                         <select className="border rounded px-2 py-1.5 text-sm" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}>
                                             <option value="Todos">Todos Status</option>
+                                            <option value="Aberta">Aberta</option>
                                             <option>Em Andamento</option>
                                             <option>Concluída</option>
                                             <option>Recorrente</option>
+                                            <option>Cancelada</option>
                                         </select>
                                         <div className="flex gap-2 items-center">
                                             <select className="border rounded px-2 py-1.5 text-sm" value={filters.dateFilter} onChange={e => setFilters({...filters, dateFilter: e.target.value})}>
@@ -599,7 +602,19 @@
                                                             )}
                                                         </div>
                                                     )}
-                                                    <StatusBadge status={task.status} />
+                                                    <div className="flex items-center gap-2">
+                                                        <StatusBadge status={task.status} />
+                                                        <select
+                                                            className="text-[11px] border rounded px-2 py-1 bg-white shadow-sm"
+                                                            value={task.status}
+                                                            onChange={(e) => updateTaskField(task.id, 'status', e.target.value)}
+                                                        >
+                                                            <option>Em Andamento</option>
+                                                            <option>Recorrente</option>
+                                                            <option>Concluída</option>
+                                                            <option>Cancelada</option>
+                                                        </select>
+                                                    </div>
                                                 </div>
 
                                                 {task.status === 'Recorrente' && (
