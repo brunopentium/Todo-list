@@ -141,6 +141,7 @@
             const [modalOpen, setModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
             const [expandedSubtasks, setExpandedSubtasks] = useState({});
+            const [expandedNotes, setExpandedNotes] = useState({});
             const [editingDateId, setEditingDateId] = useState(null);
             const [editingDeadlineId, setEditingDeadlineId] = useState(null);
             const [editingTitleId, setEditingTitleId] = useState(null);
@@ -167,6 +168,10 @@
                 status: task.status === 'Pendente' ? 'Em Andamento' : task.status,
                 recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) }
             });
+
+            const toggleNotesVisibility = (taskId) => {
+                setExpandedNotes(prev => ({ ...prev, [taskId]: !prev[taskId] }));
+            };
 
             const getNextRecurrenceDate = (task) => {
                 const recurrence = { ...defaultRecurrence, ...(task.recurrence || {}) };
@@ -728,6 +733,16 @@
                                                     )}
                                                     <div className="flex items-center gap-2 relative">
                                                         <StatusBadge status={task.status} onClick={() => toggleStatusMenu(task.id)} />
+                                                        {task.notes && (
+                                                            <button
+                                                                type="button"
+                                                                className="text-slate-500 hover:text-slate-700"
+                                                                onClick={() => toggleNotesVisibility(task.id)}
+                                                                title={expandedNotes[task.id] ? 'Ocultar observações' : 'Mostrar observações'}
+                                                            >
+                                                                <Icon name={expandedNotes[task.id] ? 'chevron-up' : 'chevron-down'} size={16} />
+                                                            </button>
+                                                        )}
                                                         {statusMenuTask === task.id && (
                                                             <div className="absolute z-20 top-full mt-1 bg-white border rounded shadow w-36 text-xs">
                                                                 {STATUS_OPTIONS.map(option => (
@@ -814,7 +829,7 @@
                                                     </div>
                                                 ) : null}
 
-                                                {task.notes && (
+                                                {task.notes && expandedNotes[task.id] && (
                                                     <div className="mt-2 text-xs text-slate-500 italic leading-snug">
                                                         Obs: {task.notes}
                                                     </div>
