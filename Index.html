@@ -92,6 +92,7 @@
             const [view, setView] = useState('dashboard'); // dashboard, settings
             const [modalOpen, setModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
+            const [expandedSubtasks, setExpandedSubtasks] = useState({});
             
             // Configurações padrão
             const [config, setConfig] = useState({
@@ -104,7 +105,10 @@
             const [filters, setFilters] = useState({
                 project: 'Todos',
                 status: 'Todos',
-                search: ''
+                search: '',
+                dateFilter: 'Todos',
+                startDate: '',
+                endDate: ''
             });
 
             // --- PERSISTENCE ---
@@ -112,7 +116,13 @@
                 const savedTasks = localStorage.getItem('tm_tasks');
                 const savedProjects = localStorage.getItem('tm_projects');
                 const savedConfig = localStorage.getItem('tm_config');
-                if (savedTasks) setTasks(JSON.parse(savedTasks));
+                if (savedTasks) {
+                    const parsedTasks = JSON.parse(savedTasks).map(t => ({
+                        ...t,
+                        status: t.status === 'Pendente' ? 'Em Andamento' : t.status
+                    }));
+                    setTasks(parsedTasks);
+                }
                 if (savedProjects) setProjects(JSON.parse(savedProjects));
                 if (savedConfig) setConfig(JSON.parse(savedConfig));
             }, []);
@@ -210,7 +220,13 @@
                 reader.onload = (e) => {
                     try {
                         const data = JSON.parse(e.target.result);
-                        if(data.tasks) setTasks(data.tasks);
+                        if(data.tasks) {
+                            const normalizedTasks = data.tasks.map(t => ({
+                                ...t,
+                                status: t.status === 'Pendente' ? 'Em Andamento' : t.status
+                            }));
+                            setTasks(normalizedTasks);
+                        }
                         if(data.projects) setProjects(data.projects);
                         if(data.config) setConfig(data.config);
                         alert('Backup restaurado com sucesso!');
@@ -222,26 +238,54 @@
             };
 
             // --- FILTRAGEM ---
+            const todayStr = getTodayStr();
+            const tomorrowStr = addDays(todayStr, 1);
+
             const filteredTasks = useMemo(() => {
                 return tasks.filter(t => {
                     const matchProj = filters.project === 'Todos' || t.project === filters.project;
                     const matchStatus = filters.status === 'Todos' || t.status === filters.status;
                     const matchSearch = t.title.toLowerCase().includes(filters.search.toLowerCase());
-                    return matchProj && matchStatus && matchSearch;
+                    let matchDate = true;
+
+                    if (filters.dateFilter === 'Hoje') {
+                        matchDate = t.date === todayStr;
+                    } else if (filters.dateFilter === 'Amanhã') {
+                        matchDate = t.date === tomorrowStr;
+                    } else if (filters.dateFilter === 'Período') {
+                        if (filters.startDate && t.date < filters.startDate) matchDate = false;
+                        if (filters.endDate && t.date > filters.endDate) matchDate = false;
+                    }
+
+                    return matchProj && matchStatus && matchSearch && matchDate;
                 }).sort((a, b) => {
                     // Ordenar por Data (mais urgente primeiro), depois Prioridade
                     if (a.date !== b.date) return a.date > b.date ? 1 : -1;
                     return b.priority - a.priority;
                 });
-            }, [tasks, filters]);
-
-            const todayStr = getTodayStr();
-            const tomorrowStr = addDays(todayStr, 1);
+            }, [tasks, filters, todayStr, tomorrowStr]);
 
             const stats = {
                 today: tasks.filter(t => t.date === todayStr && t.status !== 'Concluída').length,
                 tomorrow: tasks.filter(t => t.date === tomorrowStr && t.status !== 'Concluída').length,
                 late: tasks.filter(t => t.deadline && t.deadline < todayStr && t.status !== 'Concluída').length
+            };
+
+            const isExecutionAfterDeadline = (task) => {
+                return task.deadline && task.date > task.deadline;
+            };
+
+            const getCardBackground = (task) => {
+                if (task.deadline && task.deadline < todayStr && task.status !== 'Concluída' && task.status !== 'Cancelada') {
+                    return 'bg-red-50';
+                }
+                if (task.date === todayStr) return 'bg-yellow-50';
+                if (task.date === tomorrowStr) return 'bg-amber-50';
+                return '';
+            };
+
+            const toggleSubtasksVisibility = (taskId) => {
+                setExpandedSubtasks(prev => ({ ...prev, [taskId]: !prev[taskId] }));
             };
 
             return (
@@ -282,52 +326,71 @@
                     </aside>
 
                     {/* MAIN CONTENT */}
-                    <main className="flex-1 overflow-y-auto h-screen bg-slate-100 p-4 md:p-8">
+                    <main className="flex-1 overflow-y-auto h-screen bg-slate-100 p-4 md:p-6">
                         
                         {view === 'dashboard' && (
                             <div className="max-w-5xl mx-auto">
                                 {/* Filters Bar */}
-                                <div className="bg-white p-4 rounded-lg shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-end md:items-center justify-between">
-                                    <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
-                                        <select className="border rounded p-2 text-sm" value={filters.project} onChange={e => setFilters({...filters, project: e.target.value})}>
+                                <div className="bg-white p-3 rounded-lg shadow-sm mb-4 flex flex-col md:flex-row gap-3 items-end md:items-center justify-between">
+                                    <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto items-start md:items-center">
+                                        <select className="border rounded px-2 py-1.5 text-sm" value={filters.project} onChange={e => setFilters({...filters, project: e.target.value})}>
                                             <option value="Todos">Todos Projetos</option>
                                             {projects.map(p => <option key={p} value={p}>{p}</option>)}
                                         </select>
-                                        <select className="border rounded p-2 text-sm" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}>
+                                        <select className="border rounded px-2 py-1.5 text-sm" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}>
                                             <option value="Todos">Todos Status</option>
-                                            <option>Pendente</option>
                                             <option>Em Andamento</option>
                                             <option>Concluída</option>
                                             <option>Recorrente</option>
                                         </select>
+                                        <div className="flex gap-2 items-center">
+                                            <select className="border rounded px-2 py-1.5 text-sm" value={filters.dateFilter} onChange={e => setFilters({...filters, dateFilter: e.target.value})}>
+                                                <option value="Todos">Todas Datas</option>
+                                                <option value="Hoje">Hoje</option>
+                                                <option value="Amanhã">Amanhã</option>
+                                                <option value="Período">Período</option>
+                                            </select>
+                                            {filters.dateFilter === 'Período' && (
+                                                <div className="flex gap-2 items-center text-xs text-slate-500">
+                                                    <input type="date" className="border rounded px-2 py-1" value={filters.startDate} onChange={e => setFilters({...filters, startDate: e.target.value})} />
+                                                    <span>a</span>
+                                                    <input type="date" className="border rounded px-2 py-1" value={filters.endDate} onChange={e => setFilters({...filters, endDate: e.target.value})} />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                     <div className="w-full md:w-64">
-                                        <input type="text" placeholder="Buscar tarefa..." className="border rounded p-2 w-full text-sm" value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
+                                        <input type="text" placeholder="Buscar tarefa..." className="border rounded px-2 py-1.5 w-full text-sm" value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
                                     </div>
                                 </div>
 
                                 {/* Tasks Grid */}
-                                <div className="grid gap-4">
+                                <div className="grid gap-3">
                                     {filteredTasks.length === 0 && (
                                         <div className="text-center text-slate-400 py-10">Nenhuma tarefa encontrada.</div>
                                     )}
-                                    
+
                                     {filteredTasks.map(task => (
-                                        <div key={task.id} className={`bg-white rounded-lg shadow hover:shadow-md transition p-4 border-l-4 ${getAlertLevel(task)} relative group`}>
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{task.project}</span>
-                                                    <h3 className="text-lg font-bold text-slate-800">{task.title}</h3>
+                                        <div key={task.id} className={`bg-white rounded-lg shadow-sm hover:shadow transition p-3 border-l-4 ${getAlertLevel(task)} ${getCardBackground(task)} relative group`}>
+                                            <div className="flex justify-between items-start mb-1.5 gap-2">
+                                                <div className="space-y-0.5">
+                                                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{task.project}</span>
+                                                    <h3 className="text-base font-bold text-slate-800 leading-tight">{task.title}</h3>
                                                 </div>
-                                                <div className="flex gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    {isExecutionAfterDeadline(task) && (
+                                                        <span className="text-red-500" title="Execução após o prazo definido">
+                                                            <Icon name="alert-triangle" size={18} />
+                                                        </span>
+                                                    )}
                                                     <button onClick={() => { setEditingTask(task); setModalOpen(true); }} className="p-1 text-slate-400 hover:text-blue-500"><Icon name="edit-2" size={16}/></button>
                                                     <button onClick={() => deleteTask(task.id)} className="p-1 text-slate-400 hover:text-red-500"><Icon name="trash-2" size={16}/></button>
                                                 </div>
                                             </div>
 
-                                            <div className="flex flex-wrap gap-y-2 gap-x-4 text-sm text-slate-600 mb-3">
+                                            <div className="flex flex-wrap gap-y-1.5 gap-x-3 text-sm text-slate-600 mb-2">
                                                 <div className="flex items-center gap-1" title="Data Execução">
-                                                    <Icon name="calendar" size={14} /> 
+                                                    <Icon name="calendar" size={14} />
                                                     <span className={task.date === todayStr ? "font-bold text-blue-600" : (task.date === tomorrowStr ? "font-bold text-indigo-600" : "")}>
                                                         {task.date === todayStr ? 'Hoje' : (task.date === tomorrowStr ? 'Amanhã' : task.date.split('-').reverse().join('/'))}
                                                     </span>
@@ -341,7 +404,7 @@
                                             </div>
 
                                             {/* Stats Row */}
-                                            <div className="flex items-center gap-4 text-xs text-slate-500 border-t border-slate-100 pt-2 mt-2">
+                                            <div className="flex items-center gap-3 text-xs text-slate-500 border-t border-slate-100 pt-2 mt-2">
                                                 <div className="flex items-center gap-1" title="Prioridade">
                                                     Prioridade: <RatingDisplay value={task.priority} color="text-red-400" />
                                                 </div>
@@ -352,19 +415,25 @@
 
                                             {/* Subtasks */}
                                             {task.subtasks && task.subtasks.length > 0 && (
-                                                <div className="mt-3 bg-slate-50 p-2 rounded">
-                                                    <p className="text-xs font-bold text-slate-500 mb-1">Subtarefas</p>
-                                                    {task.subtasks.map((sub, idx) => (
-                                                        <div key={idx} className="flex items-center gap-2 text-sm">
-                                                            <input type="checkbox" checked={sub.completed} onChange={() => toggleSubtask(task.id, idx)} className="rounded text-blue-600" />
-                                                            <span className={sub.completed ? "subtask-done" : ""}>{sub.text}</span>
+                                                <div className="mt-2 bg-slate-50 p-2 rounded">
+                                                    <button type="button" onClick={() => toggleSubtasksVisibility(task.id)} className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                                                        <Icon name={expandedSubtasks[task.id] ? 'chevron-down' : 'chevron-right'} size={14} /> Subtarefas
+                                                    </button>
+                                                    {expandedSubtasks[task.id] && (
+                                                        <div className="mt-1 space-y-1">
+                                                            {task.subtasks.map((sub, idx) => (
+                                                                <div key={idx} className="flex items-center gap-2 text-sm leading-tight">
+                                                                    <input type="checkbox" checked={sub.completed} onChange={() => toggleSubtask(task.id, idx)} className="rounded text-blue-600" />
+                                                                    <span className={sub.completed ? "subtask-done" : ""}>{sub.text}</span>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    ))}
+                                                    )}
                                                 </div>
                                             )}
-                                            
+
                                             {task.notes && (
-                                                <div className="mt-2 text-xs text-slate-500 italic">
+                                                <div className="mt-2 text-xs text-slate-500 italic leading-snug">
                                                     Obs: {task.notes}
                                                 </div>
                                             )}
@@ -448,7 +517,7 @@
                 project: projects[0] || 'Geral',
                 date: getTodayStr(),
                 deadline: '',
-                status: 'Pendente',
+                status: 'Em Andamento',
                 priority: 3,
                 difficulty: 3,
                 notes: '',
@@ -459,12 +528,16 @@
             const [showNewProjInput, setShowNewProjInput] = useState(false);
             const [tempSubtask, setTempSubtask] = useState('');
 
-            const handleSubmit = (e) => {
-                e.preventDefault();
+            const submitForm = () => {
                 onSave({
                     ...formData,
                     project: showNewProjInput && newProject ? newProject : formData.project
                 });
+            };
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                submitForm();
             };
 
             const addSubtask = () => {
@@ -480,13 +553,18 @@
             };
 
             return (
-                <form onSubmit={handleSubmit} className="p-6">
-                    <div className="flex justify-between items-center mb-6 border-b pb-2">
+                <form onSubmit={handleSubmit} onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && !e.target.dataset.preventSubmit) {
+                        e.preventDefault();
+                        submitForm();
+                    }
+                }} className="p-5">
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
                         <h2 className="text-xl font-bold text-slate-800">{task ? 'Editar Tarefa' : 'Nova Tarefa'}</h2>
                         <button type="button" onClick={onCancel} className="text-slate-400 hover:text-slate-600"><Icon name="x" /></button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                         <div className="col-span-2">
                             <label className="block text-sm font-bold text-slate-700 mb-1">Título da Tarefa</label>
                             <input required type="text" className="w-full border p-2 rounded" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
@@ -512,7 +590,6 @@
                         <div>
                             <label className="block text-sm font-bold text-slate-700 mb-1">Status</label>
                             <select className="w-full border p-2 rounded" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
-                                <option>Pendente</option>
                                 <option>Em Andamento</option>
                                 <option>Concluída</option>
                                 <option>Recorrente</option>
@@ -545,7 +622,7 @@
                         <div className="col-span-2">
                              <label className="block text-sm font-bold text-slate-700 mb-1">Subtarefas</label>
                              <div className="flex gap-2 mb-2">
-                                <input type="text" placeholder="Adicionar item..." className="flex-1 border p-2 rounded text-sm" value={tempSubtask} onChange={e => setTempSubtask(e.target.value)} onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), addSubtask())} />
+                                <input type="text" placeholder="Adicionar item..." className="flex-1 border p-2 rounded text-sm" value={tempSubtask} onChange={e => setTempSubtask(e.target.value)} data-prevent-submit="true" onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), addSubtask())} />
                                 <button type="button" onClick={addSubtask} className="bg-blue-100 text-blue-600 px-3 rounded font-bold">+</button>
                              </div>
                              <ul className="space-y-1">
@@ -564,7 +641,7 @@
                         </div>
                     </div>
 
-                    <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+                    <div className="flex justify-end gap-3 mt-4 pt-3 border-t">
                         <button type="button" onClick={onCancel} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded">Cancelar</button>
                         <button type="submit" className="px-6 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 shadow-lg">Salvar Tarefa</button>
                     </div>
