@@ -257,7 +257,9 @@
         function App() {
             // --- STATE ---
             const [tasks, setTasks] = useState([]);
-            const [projects, setProjects] = useState(['Pessoal', 'Trabalho']);
+            const ensureDefaultProject = (list) => list.includes('Geral') ? list : ['Geral', ...list];
+
+            const [projects, setProjects] = useState(['Geral', 'Pessoal', 'Trabalho']);
             const [view, setView] = useState('dashboard'); // dashboard, settings, conflicts
             const [modalOpen, setModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
@@ -376,7 +378,7 @@
                     const parsedTasks = JSON.parse(savedTasks).map(t => normalizeTask(t));
                     setTasks(parsedTasks);
                 }
-                if (savedProjects) setProjects(JSON.parse(savedProjects));
+                if (savedProjects) setProjects(ensureDefaultProject(JSON.parse(savedProjects)));
                 if (savedConfig) setConfig({ ...defaultConfig, ...JSON.parse(savedConfig) });
             }, []);
 
@@ -456,10 +458,25 @@
                 }
                 // Adicionar projeto se for novo
                 if (!projects.includes(task.project)) {
-                    setProjects([...projects, task.project]);
+                    setProjects(ensureDefaultProject([...projects, task.project]));
                 }
                 setModalOpen(false);
                 setEditingTask(null);
+            };
+
+            const deleteProject = (projectName) => {
+                const hasActiveTasks = tasks.some(t => t.project === projectName && (t.status === 'Em Andamento' || t.status === 'Recorrente'));
+                if (hasActiveTasks) {
+                    alert('Não é possível excluir projetos com tarefas em andamento ou recorrentes.');
+                    return;
+                }
+
+                if (!confirm(`Deseja excluir o projeto "${projectName}"?`)) return;
+
+                setProjects(prev => ensureDefaultProject(prev.filter(p => p !== projectName)));
+                setTasks(prev => prev.map(t => t.project === projectName ? { ...t, project: 'Geral' } : t));
+                setFilters(prev => prev.project === projectName ? { ...prev, project: 'Todos' } : prev);
+                setEditingTask(prev => prev && prev.project === projectName ? { ...prev, project: 'Geral' } : prev);
             };
 
             const deleteTask = (id) => {
@@ -1230,11 +1247,13 @@
                     {modalOpen && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
                             <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto modal-animate">
-                                <TaskForm 
-                                    task={editingTask} 
-                                    projects={projects} 
-                                    onSave={saveTask} 
-                                    onCancel={() => setModalOpen(false)} 
+                                <TaskForm
+                                    task={editingTask}
+                                    projects={projects}
+                                    tasks={tasks}
+                                    onSave={saveTask}
+                                    onCancel={() => setModalOpen(false)}
+                                    onDeleteProject={deleteProject}
                                 />
                             </div>
                         </div>
@@ -1244,7 +1263,7 @@
         }
 
         // 4. TASK FORM COMPONENT
-        function TaskForm({ task, projects, onSave, onCancel }) {
+        function TaskForm({ task, projects, tasks = [], onSave, onCancel, onDeleteProject }) {
             const initialTask = task ? { ...task, recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) } } : {
                 title: '',
                 project: projects[0] || 'Geral',
@@ -1270,6 +1289,12 @@
                 setFormData(task ? { ...task, recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) } } : initialTask);
                 setMonthDaysInput(((task && task.recurrence?.daysOfMonth) || initialTask.recurrence?.daysOfMonth || []).join(','));
             }, [task]);
+
+            useEffect(() => {
+                if (formData.project && !projects.includes(formData.project)) {
+                    setFormData(prev => ({ ...prev, project: projects[0] || 'Geral' }));
+                }
+            }, [projects]);
 
             const updateRecurrence = (changes) => {
                 setFormData(prev => ({
@@ -1360,6 +1385,29 @@
                                     <button type="button" onClick={() => setShowNewProjInput(false)} className="text-red-500 p-2"><Icon name="x" size={16}/></button>
                                 </div>
                             )}
+
+                            <div className="flex flex-wrap gap-2 mt-2">
+                                {projects.map(projectName => {
+                                    const hasBlockedTasks = tasks.some(t => t.project === projectName && (t.status === 'Em Andamento' || t.status === 'Recorrente'));
+                                    const isDefaultProject = projectName === 'Geral';
+                                    return (
+                                        <span key={projectName} className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-slate-100 border border-slate-200">
+                                            <span className="font-semibold text-slate-700">{projectName}</span>
+                                            {!isDefaultProject && (
+                                                <button
+                                                    type="button"
+                                                    disabled={hasBlockedTasks}
+                                                    onClick={() => onDeleteProject && onDeleteProject(projectName)}
+                                                    className={`p-1 rounded ${hasBlockedTasks ? 'text-slate-400 cursor-not-allowed' : 'text-red-500 hover:bg-red-50'}`}
+                                                    title={hasBlockedTasks ? 'Existem tarefas em andamento ou recorrentes' : 'Excluir projeto'}
+                                                >
+                                                    <Icon name="x" size={14} />
+                                                </button>
+                                            )}
+                                        </span>
+                                    );
+                                })}
+                            </div>
                         </div>
 
                         <div>
