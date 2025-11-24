@@ -135,6 +135,9 @@
 
         const DEFAULT_PROJECT = 'R&D';
 
+        const SECONDARY_FIELDS = ['project', 'priority', 'difficulty', 'deadline'];
+        const DEFAULT_SECONDARY_SORT = SECONDARY_FIELDS.map(field => ({ field, direction: 'asc' }));
+
         const defaultConfig = {
             alertYellow: 7,
             alertOrange: 3,
@@ -144,7 +147,7 @@
             tomorrowBg: '#ffedd5',
             deadlineBg: '#fee2e2',
             projectPriorities: {},
-            secondarySortLevels: ['project', 'priority', 'difficulty', 'deadline']
+            secondarySortLevels: DEFAULT_SECONDARY_SORT
         };
 
         const defaultRecurrence = {
@@ -396,7 +399,12 @@
                         acc[normalizeProjectName(key)] = value;
                         return acc;
                     }, {});
-                    setConfig({ ...defaultConfig, ...parsedConfig, projectPriorities });
+                    setConfig({
+                        ...defaultConfig,
+                        ...parsedConfig,
+                        projectPriorities,
+                        secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
+                    });
                 }
             }, []);
 
@@ -446,12 +454,39 @@
             return Number.isNaN(numeric) ? -Infinity : numeric;
         };
 
-        const SECONDARY_FIELDS = ['project', 'priority', 'difficulty', 'deadline'];
         const SECONDARY_FIELD_LABELS = {
             project: 'Projeto (prioridade)',
             priority: 'Prioridade',
             difficulty: 'Dificuldade',
             deadline: 'Deadline'
+        };
+
+        const normalizeSecondarySortLevels = (levels = DEFAULT_SECONDARY_SORT) => {
+            const input = Array.isArray(levels) && levels.length ? levels : DEFAULT_SECONDARY_SORT;
+
+            const mapped = input.map((entry, idx) => {
+                if (typeof entry === 'string') return { field: entry, direction: 'asc' };
+                const field = SECONDARY_FIELDS.includes(entry?.field)
+                    ? entry.field
+                    : (SECONDARY_FIELDS[idx] || SECONDARY_FIELDS[0]);
+                const direction = entry?.direction === 'desc' ? 'desc' : 'asc';
+                return { field, direction };
+            });
+
+            const ordered = [];
+            mapped.forEach(item => {
+                if (!item || !SECONDARY_FIELDS.includes(item.field)) return;
+                if (ordered.some(o => o.field === item.field)) return;
+                ordered.push(item);
+            });
+
+            SECONDARY_FIELDS.forEach(field => {
+                if (!ordered.some(o => o.field === field)) {
+                    ordered.push({ field, direction: 'asc' });
+                }
+            });
+
+            return ordered.slice(0, SECONDARY_FIELDS.length);
         };
 
         const compareDates = (dateA, dateB) => {
@@ -483,14 +518,12 @@
             const primary = compareDates(getEffectiveDate(a), getEffectiveDate(b));
             if (primary !== 0) return primary;
 
-            const secondaryOrder = (config.secondarySortLevels && config.secondarySortLevels.length)
-                ? config.secondarySortLevels
-                : SECONDARY_FIELDS;
+            const secondaryOrder = normalizeSecondarySortLevels(config.secondarySortLevels);
 
-            for (const field of secondaryOrder) {
+            for (const { field, direction } of secondaryOrder) {
                 if (!SECONDARY_FIELDS.includes(field)) continue;
                 const result = compareByField(field, a, b);
-                if (result !== 0) return result;
+                if (result !== 0) return direction === 'desc' ? -result : result;
             }
 
             return a.title.localeCompare(b.title);
@@ -508,26 +541,19 @@
             });
         };
 
-        const updateSecondarySortLevel = (index, value) => {
+        const updateSecondarySortLevel = (index, field) => {
             setConfig(prev => {
-                const current = (prev.secondarySortLevels && prev.secondarySortLevels.length)
-                    ? [...prev.secondarySortLevels]
-                    : [...SECONDARY_FIELDS];
+                const current = normalizeSecondarySortLevels(prev.secondarySortLevels);
+                const updated = current.map((item, idx) => idx === index ? { ...item, field } : item);
+                return { ...prev, secondarySortLevels: normalizeSecondarySortLevels(updated) };
+            });
+        };
 
-                current[index] = value;
-
-                const ordered = [];
-                current.forEach(field => {
-                    if (SECONDARY_FIELDS.includes(field) && !ordered.includes(field)) {
-                        ordered.push(field);
-                    }
-                });
-
-                SECONDARY_FIELDS.forEach(field => {
-                    if (!ordered.includes(field)) ordered.push(field);
-                });
-
-                return { ...prev, secondarySortLevels: ordered.slice(0, SECONDARY_FIELDS.length) };
+        const updateSecondarySortDirection = (index, direction) => {
+            setConfig(prev => {
+                const current = normalizeSecondarySortLevels(prev.secondarySortLevels);
+                const updated = current.map((item, idx) => idx === index ? { ...item, direction } : item);
+                return { ...prev, secondarySortLevels: normalizeSecondarySortLevels(updated) };
             });
         };
 
@@ -755,9 +781,10 @@
                 alertRed: tasks.filter(t => ['red', 'overdue'].includes(getDeadlineLevel(t))).length
             };
 
-            const secondarySortLevels = (config.secondarySortLevels && config.secondarySortLevels.length)
-                ? config.secondarySortLevels
-                : SECONDARY_FIELDS;
+            const secondarySortLevels = useMemo(
+                () => normalizeSecondarySortLevels(config.secondarySortLevels),
+                [config.secondarySortLevels]
+            );
 
             const isPendingTask = (task) => !['Concluída', 'Cancelada'].includes(task.status);
 
@@ -1349,7 +1376,7 @@
                                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="list-ordered" className="text-emerald-500" /> Desempate de Ordenação</h3>
                                     <p className="text-sm text-slate-600 mb-3">A data de execução é sempre o critério principal. Ajuste abaixo a ordem de classificação usada para desempatar tarefas na mesma data.</p>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                                        {secondarySortLevels.map((field, idx) => (
+                                        {secondarySortLevels.map(({ field, direction }, idx) => (
                                             <div key={idx} className="flex flex-col gap-1">
                                                 <label className="text-sm text-slate-600">Nível {idx + 1}</label>
                                                 <select
@@ -1360,6 +1387,14 @@
                                                     {SECONDARY_FIELDS.map(option => (
                                                         <option key={option} value={option}>{SECONDARY_FIELD_LABELS[option]}</option>
                                                     ))}
+                                                </select>
+                                                <select
+                                                    className="border rounded px-3 py-2 text-sm"
+                                                    value={direction}
+                                                    onChange={(e) => updateSecondarySortDirection(idx, e.target.value)}
+                                                >
+                                                    <option value="asc">Crescente (A→Z / menor → maior)</option>
+                                                    <option value="desc">Decrescente (Z→A / maior → menor)</option>
                                                 </select>
                                             </div>
                                         ))}
