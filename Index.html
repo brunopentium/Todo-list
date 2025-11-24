@@ -143,7 +143,8 @@
             todayBg: '#fef9c3',
             tomorrowBg: '#ffedd5',
             deadlineBg: '#fee2e2',
-            projectPriorities: {}
+            projectPriorities: {},
+            secondarySortLevels: ['project', 'priority', 'difficulty', 'deadline']
         };
 
         const defaultRecurrence = {
@@ -296,8 +297,6 @@
                 endDate: ''
             });
 
-            const [sortOption, setSortOption] = useState({ field: 'executionDate', direction: 'asc' });
-
             const normalizeTask = (task) => ({
                 ...task,
                 project: normalizeProjectName(task.project),
@@ -447,6 +446,14 @@
             return Number.isNaN(numeric) ? -Infinity : numeric;
         };
 
+        const SECONDARY_FIELDS = ['project', 'priority', 'difficulty', 'deadline'];
+        const SECONDARY_FIELD_LABELS = {
+            project: 'Projeto (prioridade)',
+            priority: 'Prioridade',
+            difficulty: 'Dificuldade',
+            deadline: 'Deadline'
+        };
+
         const compareDates = (dateA, dateB) => {
             if (dateA && dateB && dateA !== dateB) return dateA > dateB ? 1 : -1;
             if (!dateA && dateB) return 1;
@@ -454,34 +461,39 @@
             return 0;
         };
 
-        const compareTasks = (a, b) => {
-            let result = 0;
-
-            switch (sortOption.field) {
+        const compareByField = (field, a, b) => {
+            switch (field) {
                 case 'project': {
                     const priorityDiff = getProjectPriorityValue(a.project) - getProjectPriorityValue(b.project);
-                    if (priorityDiff !== 0) result = priorityDiff;
-                    else result = a.project.localeCompare(b.project);
-                    break;
+                    if (priorityDiff !== 0) return priorityDiff;
+                    return a.project.localeCompare(b.project);
                 }
                 case 'priority':
-                    result = (a.priority || 0) - (b.priority || 0);
-                    break;
+                    return (a.priority || 0) - (b.priority || 0);
                 case 'difficulty':
-                    result = (Number(a.difficulty) || 0) - (Number(b.difficulty) || 0);
-                    break;
+                    return (Number(a.difficulty) || 0) - (Number(b.difficulty) || 0);
                 case 'deadline':
-                    result = compareDates(a.deadline, b.deadline);
-                    break;
+                    return compareDates(a.deadline, b.deadline);
                 default:
-                    result = compareDates(getEffectiveDate(a), getEffectiveDate(b));
+                    return 0;
+            }
+        };
+
+        const compareTasks = (a, b) => {
+            const primary = compareDates(getEffectiveDate(a), getEffectiveDate(b));
+            if (primary !== 0) return primary;
+
+            const secondaryOrder = (config.secondarySortLevels && config.secondarySortLevels.length)
+                ? config.secondarySortLevels
+                : SECONDARY_FIELDS;
+
+            for (const field of secondaryOrder) {
+                if (!SECONDARY_FIELDS.includes(field)) continue;
+                const result = compareByField(field, a, b);
+                if (result !== 0) return result;
             }
 
-            if (result === 0) {
-                result = a.title.localeCompare(b.title);
-            }
-
-            return sortOption.direction === 'desc' ? -result : result;
+            return a.title.localeCompare(b.title);
         };
 
         const updateProjectPriority = (projectName, value) => {
@@ -493,6 +505,29 @@
                     updated[projectName] = value;
                 }
                 return { ...prev, projectPriorities: updated };
+            });
+        };
+
+        const updateSecondarySortLevel = (index, value) => {
+            setConfig(prev => {
+                const current = (prev.secondarySortLevels && prev.secondarySortLevels.length)
+                    ? [...prev.secondarySortLevels]
+                    : [...SECONDARY_FIELDS];
+
+                current[index] = value;
+
+                const ordered = [];
+                current.forEach(field => {
+                    if (SECONDARY_FIELDS.includes(field) && !ordered.includes(field)) {
+                        ordered.push(field);
+                    }
+                });
+
+                SECONDARY_FIELDS.forEach(field => {
+                    if (!ordered.includes(field)) ordered.push(field);
+                });
+
+                return { ...prev, secondarySortLevels: ordered.slice(0, SECONDARY_FIELDS.length) };
             });
         };
 
@@ -700,7 +735,7 @@
 
                     return matchProj && matchStatus && matchSearch && matchDate;
                 }).sort(compareTasks);
-            }, [tasks, filters, todayStr, tomorrowStr, sortOption, config]);
+            }, [tasks, filters, todayStr, tomorrowStr, config]);
 
             const activeProjects = useMemo(() => {
                 const names = tasks
@@ -719,6 +754,10 @@
                 alertOrange: tasks.filter(t => getDeadlineLevel(t) === 'orange').length,
                 alertRed: tasks.filter(t => ['red', 'overdue'].includes(getDeadlineLevel(t))).length
             };
+
+            const secondarySortLevels = (config.secondarySortLevels && config.secondarySortLevels.length)
+                ? config.secondarySortLevels
+                : SECONDARY_FIELDS;
 
             const isPendingTask = (task) => !['Concluída', 'Cancelada'].includes(task.status);
 
@@ -943,6 +982,13 @@
                                 >
                                     <Icon name="plus-square" size={14} />
                                 </button>
+                                <button
+                                    onClick={() => toggleNotesVisibility(task.id)}
+                                    className={`p-1 ${expandedNotes[task.id] ? 'text-amber-600' : (task.notes ? 'text-amber-500' : 'text-slate-400')} hover:text-amber-600`}
+                                    title={expandedNotes[task.id] ? 'Esconder notas' : (task.notes ? 'Ver notas' : 'Adicionar notas')}
+                                >
+                                    <Icon name="sticky-note" size={14} />
+                                </button>
                                 <button onClick={() => { setEditingTask(task); setModalOpen(true); }} className="p-1 text-slate-400 hover:text-blue-500"><Icon name="edit-2" size={14}/></button>
                                 <button onClick={() => deleteTask(task.id)} className="p-1 text-slate-400 hover:text-red-500"><Icon name="trash-2" size={14}/></button>
                             </div>
@@ -1027,14 +1073,8 @@
                             )}
                         </div>
 
-                        <div className="mt-1 text-[12px] text-slate-500">
-                            <button onClick={() => toggleNotesVisibility(task.id)} className="hover:underline flex items-center gap-1">
-                                <Icon name="sticky-note" size={12} /> {expandedNotes[task.id] ? 'Esconder notas' : (task.notes ? 'Ver notas' : 'Adicionar notas')}
-                            </button>
-                        </div>
-
                         {expandedNotes[task.id] && (
-                            <div className="mt-1">
+                            <div className="mt-2">
                                 <textarea
                                     className="w-full border rounded px-2 py-1 text-xs"
                                     value={task.notes || ''}
@@ -1195,32 +1235,9 @@
                                             )}
                                         </div>
                                     </div>
-                                    <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto items-start md:items-center">
-                                        <div className="flex flex-col gap-1 text-xs text-slate-500">
-                                            <span className="font-semibold text-slate-600">Ordenar por</span>
-                                            <select
-                                                className="border rounded px-2 py-1.5 text-sm"
-                                                value={sortOption.field}
-                                                onChange={e => setSortOption(prev => ({ ...prev, field: e.target.value }))}
-                                            >
-                                                <option value="executionDate">Data de execução</option>
-                                                <option value="project">Projeto (prioridade)</option>
-                                                <option value="priority">Prioridade</option>
-                                                <option value="difficulty">Dificuldade</option>
-                                                <option value="deadline">Deadline</option>
-                                            </select>
-                                        </div>
-                                        <div className="flex flex-col gap-1 text-xs text-slate-500">
-                                            <span className="font-semibold text-slate-600">Direção</span>
-                                            <select
-                                                className="border rounded px-2 py-1.5 text-sm"
-                                                value={sortOption.direction}
-                                                onChange={e => setSortOption(prev => ({ ...prev, direction: e.target.value }))}
-                                            >
-                                                <option value="asc">Crescente</option>
-                                                <option value="desc">Decrescente</option>
-                                            </select>
-                                        </div>
+                                    <div className="flex flex-col gap-1 text-xs text-slate-500 max-w-xs">
+                                        <span className="font-semibold text-slate-600">Ordenação</span>
+                                        <p>As tarefas são sempre ordenadas pela data de execução. Defina a hierarquia de desempate em <strong>Configurações</strong>.</p>
                                     </div>
                                     <div className="w-full md:w-64">
                                         <input type="text" placeholder="Buscar tarefa..." className="border rounded px-2 py-1.5 w-full text-sm" value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
@@ -1326,6 +1343,28 @@
                                             ))}
                                         </div>
                                     )}
+                                </div>
+
+                                <div className="mb-8 border-t pt-6">
+                                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="list-ordered" className="text-emerald-500" /> Desempate de Ordenação</h3>
+                                    <p className="text-sm text-slate-600 mb-3">A data de execução é sempre o critério principal. Ajuste abaixo a ordem de classificação usada para desempatar tarefas na mesma data.</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                                        {secondarySortLevels.map((field, idx) => (
+                                            <div key={idx} className="flex flex-col gap-1">
+                                                <label className="text-sm text-slate-600">Nível {idx + 1}</label>
+                                                <select
+                                                    className="border rounded px-3 py-2 text-sm"
+                                                    value={field}
+                                                    onChange={(e) => updateSecondarySortLevel(idx, e.target.value)}
+                                                >
+                                                    {SECONDARY_FIELDS.map(option => (
+                                                        <option key={option} value={option}>{SECONDARY_FIELD_LABELS[option]}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2">Salvamos automaticamente essa ordem para uso futuro.</p>
                                 </div>
 
                                 <div className="mb-8 border-t pt-6">
