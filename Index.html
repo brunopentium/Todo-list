@@ -133,6 +133,8 @@
             return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
         };
 
+        const DEFAULT_PROJECT = 'R&D';
+
         const defaultConfig = {
             alertYellow: 7,
             alertOrange: 3,
@@ -140,7 +142,8 @@
             overdueColor: 'border-l-slate-900',
             todayBg: '#fef9c3',
             tomorrowBg: '#ffedd5',
-            deadlineBg: '#fee2e2'
+            deadlineBg: '#fee2e2',
+            projectPriorities: {}
         };
 
         const defaultRecurrence = {
@@ -257,9 +260,15 @@
         function App() {
             // --- STATE ---
             const [tasks, setTasks] = useState([]);
-            const ensureDefaultProject = (list) => list.includes('Geral') ? list : ['Geral', ...list];
+            const normalizeProjectName = (name) => name === 'Geral' ? DEFAULT_PROJECT : (name || DEFAULT_PROJECT);
+            const ensureDefaultProject = (list) => {
+                const sanitized = list.map(p => normalizeProjectName(p));
+                return sanitized.includes(DEFAULT_PROJECT)
+                    ? [DEFAULT_PROJECT, ...sanitized.filter(p => p !== DEFAULT_PROJECT)]
+                    : [DEFAULT_PROJECT, ...sanitized];
+            };
 
-            const [projects, setProjects] = useState(['Geral', 'Pessoal', 'Trabalho']);
+            const [projects, setProjects] = useState([DEFAULT_PROJECT, 'Pessoal', 'Trabalho']);
             const [view, setView] = useState('dashboard'); // dashboard, settings, conflicts
             const [modalOpen, setModalOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
@@ -287,8 +296,11 @@
                 endDate: ''
             });
 
+            const [sortOption, setSortOption] = useState({ field: 'executionDate', direction: 'asc' });
+
             const normalizeTask = (task) => ({
                 ...task,
+                project: normalizeProjectName(task.project),
                 status: task.status === 'Pendente' ? 'Em Andamento' : task.status,
                 recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) },
                 deferBusinessDays: Number(task.deferBusinessDays) || 0
@@ -375,11 +387,18 @@
                 const savedProjects = localStorage.getItem('tm_projects');
                 const savedConfig = localStorage.getItem('tm_config');
                 if (savedTasks) {
-                    const parsedTasks = JSON.parse(savedTasks).map(t => normalizeTask(t));
+                    const parsedTasks = JSON.parse(savedTasks).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
                     setTasks(parsedTasks);
                 }
                 if (savedProjects) setProjects(ensureDefaultProject(JSON.parse(savedProjects)));
-                if (savedConfig) setConfig({ ...defaultConfig, ...JSON.parse(savedConfig) });
+                if (savedConfig) {
+                    const parsedConfig = JSON.parse(savedConfig);
+                    const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
+                        acc[normalizeProjectName(key)] = value;
+                        return acc;
+                    }, {});
+                    setConfig({ ...defaultConfig, ...parsedConfig, projectPriorities });
+                }
             }, []);
 
             useEffect(() => {
@@ -420,6 +439,62 @@
                 };
                 return map[level] || 'border-l-4 border-l-blue-400';
             };
+
+        const getProjectPriorityValue = (projectName) => {
+            const value = config.projectPriorities?.[projectName];
+            if (value === '' || value === undefined || value === null) return -Infinity;
+            const numeric = Number(value);
+            return Number.isNaN(numeric) ? -Infinity : numeric;
+        };
+
+        const compareDates = (dateA, dateB) => {
+            if (dateA && dateB && dateA !== dateB) return dateA > dateB ? 1 : -1;
+            if (!dateA && dateB) return 1;
+            if (dateA && !dateB) return -1;
+            return 0;
+        };
+
+        const compareTasks = (a, b) => {
+            let result = 0;
+
+            switch (sortOption.field) {
+                case 'project': {
+                    const priorityDiff = getProjectPriorityValue(a.project) - getProjectPriorityValue(b.project);
+                    if (priorityDiff !== 0) result = priorityDiff;
+                    else result = a.project.localeCompare(b.project);
+                    break;
+                }
+                case 'priority':
+                    result = (a.priority || 0) - (b.priority || 0);
+                    break;
+                case 'difficulty':
+                    result = (Number(a.difficulty) || 0) - (Number(b.difficulty) || 0);
+                    break;
+                case 'deadline':
+                    result = compareDates(a.deadline, b.deadline);
+                    break;
+                default:
+                    result = compareDates(getEffectiveDate(a), getEffectiveDate(b));
+            }
+
+            if (result === 0) {
+                result = a.title.localeCompare(b.title);
+            }
+
+            return sortOption.direction === 'desc' ? -result : result;
+        };
+
+        const updateProjectPriority = (projectName, value) => {
+            setConfig(prev => {
+                const updated = { ...(prev.projectPriorities || {}) };
+                if (value === '' || Number.isNaN(value)) {
+                    delete updated[projectName];
+                } else {
+                    updated[projectName] = value;
+                }
+                return { ...prev, projectPriorities: updated };
+            });
+        };
 
         const updateTaskField = (id, field, value) => {
             setTasks(prev => prev.map(t => t.id === id ? { ...t, [field]: value } : t));
@@ -474,9 +549,9 @@
                 if (!confirm(`Deseja excluir o projeto "${projectName}"?`)) return;
 
                 setProjects(prev => ensureDefaultProject(prev.filter(p => p !== projectName)));
-                setTasks(prev => prev.map(t => t.project === projectName ? { ...t, project: 'Geral' } : t));
+                setTasks(prev => prev.map(t => t.project === projectName ? { ...t, project: DEFAULT_PROJECT } : t));
                 setFilters(prev => prev.project === projectName ? { ...prev, project: 'Todos' } : prev);
-                setEditingTask(prev => prev && prev.project === projectName ? { ...prev, project: 'Geral' } : prev);
+                setEditingTask(prev => prev && prev.project === projectName ? { ...prev, project: DEFAULT_PROJECT } : prev);
             };
 
             const deleteTask = (id) => {
@@ -580,11 +655,17 @@
                     try {
                         const data = JSON.parse(e.target.result);
                         if(data.tasks) {
-                            const normalizedTasks = data.tasks.map(t => normalizeTask(t));
+                            const normalizedTasks = data.tasks.map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
                             setTasks(normalizedTasks);
                         }
-                        if(data.projects) setProjects(data.projects);
-                        if(data.config) setConfig({ ...defaultConfig, ...data.config });
+                        if(data.projects) setProjects(ensureDefaultProject(data.projects));
+                        if(data.config) {
+                            const importedPriorities = Object.entries(data.config.projectPriorities || {}).reduce((acc, [key, value]) => {
+                                acc[normalizeProjectName(key)] = value;
+                                return acc;
+                            }, {});
+                            setConfig({ ...defaultConfig, ...data.config, projectPriorities: importedPriorities });
+                        }
                         alert('Backup restaurado com sucesso!');
                     } catch (err) {
                         alert('Erro ao ler arquivo.');
@@ -618,18 +699,15 @@
                     }
 
                     return matchProj && matchStatus && matchSearch && matchDate;
-                }).sort((a, b) => {
-                    // Ordenar por data, depois agrupar por projeto e priorizar maior prioridade/menor dificuldade
-                    const dateA = getEffectiveDate(a);
-                    const dateB = getEffectiveDate(b);
-                    if (dateA !== dateB) return dateA > dateB ? 1 : -1;
-                    if (a.project !== b.project) return a.project.localeCompare(b.project);
-                    if (a.priority !== b.priority) return b.priority - a.priority;
-                    const difficultyA = Number.isFinite(a.difficulty) ? a.difficulty : 0;
-                    const difficultyB = Number.isFinite(b.difficulty) ? b.difficulty : 0;
-                    return difficultyA - difficultyB;
-                });
-            }, [tasks, filters, todayStr, tomorrowStr]);
+                }).sort(compareTasks);
+            }, [tasks, filters, todayStr, tomorrowStr, sortOption, config]);
+
+            const activeProjects = useMemo(() => {
+                const names = tasks
+                    .filter(t => !['Concluída', 'Cancelada'].includes(t.status))
+                    .map(t => normalizeProjectName(t.project));
+                return Array.from(new Set(names));
+            }, [tasks]);
 
             const stats = {
                 today: tasks.filter(t => getEffectiveDate(t) === todayStr && !['Concluída', 'Cancelada'].includes(t.status)).length,
@@ -949,17 +1027,22 @@
                             )}
                         </div>
 
-                        {task.notes && (
-                            <div className="mt-1 text-[12px] text-slate-500">
-                                <button onClick={() => toggleNotesVisibility(task.id)} className="hover:underline flex items-center gap-1">
-                                    <Icon name="sticky-note" size={12} /> {expandedNotes[task.id] ? 'Esconder notas' : 'Ver notas'}
-                                </button>
-                            </div>
-                        )}
+                        <div className="mt-1 text-[12px] text-slate-500">
+                            <button onClick={() => toggleNotesVisibility(task.id)} className="hover:underline flex items-center gap-1">
+                                <Icon name="sticky-note" size={12} /> {expandedNotes[task.id] ? 'Esconder notas' : (task.notes ? 'Ver notas' : 'Adicionar notas')}
+                            </button>
+                        </div>
 
-                        {task.notes && expandedNotes[task.id] && (
-                            <div className="mt-1 text-xs text-slate-500 italic leading-snug">
-                                Obs: {task.notes}
+                        {expandedNotes[task.id] && (
+                            <div className="mt-1">
+                                <textarea
+                                    className="w-full border rounded px-2 py-1 text-xs"
+                                    value={task.notes || ''}
+                                    onChange={e => updateTaskField(task.id, 'notes', e.target.value)}
+                                    placeholder="Digite observações da tarefa"
+                                    rows={3}
+                                ></textarea>
+                                <p className="text-[11px] text-slate-500 mt-1">Observações editáveis diretamente no cartão.</p>
                             </div>
                         )}
 
@@ -1112,6 +1195,33 @@
                                             )}
                                         </div>
                                     </div>
+                                    <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto items-start md:items-center">
+                                        <div className="flex flex-col gap-1 text-xs text-slate-500">
+                                            <span className="font-semibold text-slate-600">Ordenar por</span>
+                                            <select
+                                                className="border rounded px-2 py-1.5 text-sm"
+                                                value={sortOption.field}
+                                                onChange={e => setSortOption(prev => ({ ...prev, field: e.target.value }))}
+                                            >
+                                                <option value="executionDate">Data de execução</option>
+                                                <option value="project">Projeto (prioridade)</option>
+                                                <option value="priority">Prioridade</option>
+                                                <option value="difficulty">Dificuldade</option>
+                                                <option value="deadline">Deadline</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex flex-col gap-1 text-xs text-slate-500">
+                                            <span className="font-semibold text-slate-600">Direção</span>
+                                            <select
+                                                className="border rounded px-2 py-1.5 text-sm"
+                                                value={sortOption.direction}
+                                                onChange={e => setSortOption(prev => ({ ...prev, direction: e.target.value }))}
+                                            >
+                                                <option value="asc">Crescente</option>
+                                                <option value="desc">Decrescente</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                     <div className="w-full md:w-64">
                                         <input type="text" placeholder="Buscar tarefa..." className="border rounded px-2 py-1.5 w-full text-sm" value={filters.search} onChange={e => setFilters({...filters, search: e.target.value})} />
                                     </div>
@@ -1186,6 +1296,36 @@
                                         </div>
                                     </div>
                                     <p className="text-xs text-slate-500 mt-2">Se o deadline passar, a tarefa utilizará a cor escolhida e a borda preta configurada.</p>
+                                </div>
+
+                                <div className="mb-8 border-t pt-6">
+                                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="layers" className="text-indigo-500" /> Prioridade dos Projetos</h3>
+                                    <p className="text-sm text-slate-600 mb-3">Defina a hierarquia de prioridade para ordenar tarefas por projeto. Números maiores significam maior prioridade.</p>
+                                    {activeProjects.length === 0 ? (
+                                        <p className="text-sm text-slate-500">Nenhum projeto com tarefas ativas no momento.</p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {activeProjects.map(projectName => (
+                                                <div key={projectName} className="flex flex-col md:flex-row md:items-center gap-2 border rounded p-2">
+                                                    <span className="font-semibold text-slate-700 md:w-48">{projectName}</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="10"
+                                                        step="1"
+                                                        className="border rounded px-2 py-1 w-full md:w-24"
+                                                        value={config.projectPriorities?.[projectName] ?? ''}
+                                                        onChange={e => {
+                                                            const raw = e.target.value;
+                                                            const numeric = raw === '' ? '' : parseInt(raw, 10);
+                                                            updateProjectPriority(projectName, numeric);
+                                                        }}
+                                                    />
+                                                    <span className="text-xs text-slate-500 flex-1">Campo em branco = menor prioridade.</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="mb-8 border-t pt-6">
@@ -1266,9 +1406,9 @@
         function TaskForm({ task, projects, tasks = [], onSave, onCancel, onDeleteProject }) {
             const initialTask = task ? { ...task, recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) } } : {
                 title: '',
-                project: projects[0] || 'Geral',
+                project: projects[0] || DEFAULT_PROJECT,
                 date: getTodayStr(),
-                deadline: '',
+                deadline: addBusinessDays(getTodayStr(), 10),
                 status: 'Em Andamento',
                 priority: 3,
                 difficulty: 3,
@@ -1292,7 +1432,7 @@
 
             useEffect(() => {
                 if (formData.project && !projects.includes(formData.project)) {
-                    setFormData(prev => ({ ...prev, project: projects[0] || 'Geral' }));
+                    setFormData(prev => ({ ...prev, project: projects[0] || DEFAULT_PROJECT }));
                 }
             }, [projects]);
 
@@ -1389,7 +1529,7 @@
                             <div className="flex flex-wrap gap-2 mt-2">
                                 {projects.map(projectName => {
                                     const hasBlockedTasks = tasks.some(t => t.project === projectName && (t.status === 'Em Andamento' || t.status === 'Recorrente'));
-                                    const isDefaultProject = projectName === 'Geral';
+                                    const isDefaultProject = projectName === DEFAULT_PROJECT;
                                     return (
                                         <span key={projectName} className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-slate-100 border border-slate-200">
                                             <span className="font-semibold text-slate-700">{projectName}</span>
