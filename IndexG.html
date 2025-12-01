@@ -405,6 +405,8 @@
 
             // --- PERSISTENCE ---
             useEffect(() => {
+                const ensureInitialLoad = () => setInitialLoad(prev => prev || true);
+
                 const loadFromLocalStorage = () => {
                     const savedTasks = localStorage.getItem('tm_tasks');
                     const savedProjects = localStorage.getItem('tm_projects');
@@ -469,7 +471,7 @@
                             secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
                         });
 
-                        setInitialLoad(true);
+                        ensureInitialLoad();
                         return true;
                     } catch (err) {
                         console.error('Erro ao carregar dados do Apps Script:', err);
@@ -479,16 +481,17 @@
                 };
 
                 loadFromLocalStorage();
-                setInitialLoad(true);
 
                 let canceled = false;
                 let intervalId;
+                const fallbackTimeout = setTimeout(ensureInitialLoad, 2000);
 
                 const tryLoadBackend = async () => {
                     if (canceled) return;
                     const loaded = await loadFromBackend();
                     if (!loaded) return;
                     canceled = true;
+                    ensureInitialLoad();
                     if (intervalId) clearInterval(intervalId);
                 };
 
@@ -498,6 +501,7 @@
                 return () => {
                     canceled = true;
                     clearInterval(intervalId);
+                    clearTimeout(fallbackTimeout);
                 };
             }, []);
 
