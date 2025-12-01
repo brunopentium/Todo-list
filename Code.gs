@@ -4,8 +4,17 @@ const SETTINGS_KEY = 'APP_SETTINGS_JSON';
 
 function getSpreadsheetId_() {
   const props = PropertiesService.getScriptProperties();
+  const legacyKeys = ['SPREADSHEET_ID', 'SPREADSHEETID', 'SHEET_ID'];
   const storedId = props.getProperty(TASKS_SPREADSHEET_PROPERTY);
   if (storedId) return storedId;
+
+  for (const key of legacyKeys) {
+    const legacyId = props.getProperty(key);
+    if (legacyId) {
+      props.setProperty(TASKS_SPREADSHEET_PROPERTY, legacyId);
+      return legacyId;
+    }
+  }
 
   const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (activeSpreadsheet) {
