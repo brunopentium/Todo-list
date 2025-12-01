@@ -32,12 +32,15 @@ function getSheet_() {
   const id = getSpreadsheetId_();
   const ss = SpreadsheetApp.openById(id);
   const sheet = ss.getSheetByName(TASKS_SHEET_NAME) || ss.insertSheet(TASKS_SHEET_NAME);
-  const header = ['id', 'title', 'date', 'deadline', 'status', 'priority', 'difficulty', 'project', 'notes', 'tags', 'subtasks', 'recurrence', 'alertLevel', 'metadata'];
-  const currentHeader = sheet.getRange(1, 1, 1, header.length).getValues()[0];
-  const needsHeader = currentHeader.join('') === '' || header.some((h, i) => currentHeader[i] !== h);
-  if (needsHeader) {
-    sheet.clear();
-    sheet.getRange(1, 1, 1, header.length).setValues([header]);
+  const header = ['id', 'title', 'date', 'deadline', 'status', 'priority', 'difficulty', 'project', 'notes', 'tags', 'subtasks',
+    'recurrence', 'alertLevel', 'metadata'];
+  const headerRange = sheet.getRange(1, 1, 1, header.length);
+  const currentHeader = headerRange.getValues()[0];
+  const hasHeader = currentHeader.some(value => value !== '');
+  const headerMismatch = header.some((h, i) => currentHeader[i] !== h);
+
+  if (!hasHeader || headerMismatch) {
+    headerRange.setValues([header]);
   }
   return sheet;
 }
