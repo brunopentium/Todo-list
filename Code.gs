@@ -1,6 +1,21 @@
-const SPREADSHEET_ID = PropertiesService.getScriptProperties().getProperty('TASKS_SPREADSHEET_ID');
+const TASKS_SPREADSHEET_PROPERTY = 'TASKS_SPREADSHEET_ID';
 const TASKS_SHEET_NAME = 'Tarefas';
 const SETTINGS_KEY = 'APP_SETTINGS_JSON';
+
+function getSpreadsheetId_() {
+  const props = PropertiesService.getScriptProperties();
+  const storedId = props.getProperty(TASKS_SPREADSHEET_PROPERTY);
+  if (storedId) return storedId;
+
+  const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (activeSpreadsheet) {
+    const activeId = activeSpreadsheet.getId();
+    props.setProperty(TASKS_SPREADSHEET_PROPERTY, activeId);
+    return activeId;
+  }
+
+  throw new Error('Defina a propriedade de script TASKS_SPREADSHEET_ID com o ID da planilha alvo.');
+}
 
 function doGet() {
   return HtmlService.createTemplateFromFile('IndexG')
@@ -14,10 +29,7 @@ function include(filename) {
 }
 
 function getSheet_() {
-  const id = SPREADSHEET_ID;
-  if (!id) {
-    throw new Error('Defina a propriedade de script TASKS_SPREADSHEET_ID com o ID da planilha alvo.');
-  }
+  const id = getSpreadsheetId_();
   const ss = SpreadsheetApp.openById(id);
   const sheet = ss.getSheetByName(TASKS_SHEET_NAME) || ss.insertSheet(TASKS_SHEET_NAME);
   const header = ['id', 'title', 'date', 'deadline', 'status', 'priority', 'difficulty', 'project', 'notes', 'tags', 'subtasks', 'recurrence', 'alertLevel', 'metadata'];
