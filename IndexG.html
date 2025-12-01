@@ -293,10 +293,10 @@
             const syncTimeoutRef = useRef(null);
             const normalizeProjectName = (name) => name === 'Geral' ? DEFAULT_PROJECT : (name || DEFAULT_PROJECT);
             const ensureDefaultProject = (list) => {
-                const sanitized = list.map(p => normalizeProjectName(p));
-                return sanitized.includes(DEFAULT_PROJECT)
-                    ? [DEFAULT_PROJECT, ...sanitized.filter(p => p !== DEFAULT_PROJECT)]
-                    : [DEFAULT_PROJECT, ...sanitized];
+                const sanitized = list.map(p => normalizeProjectName(p)).filter(Boolean);
+                const unique = Array.from(new Set(sanitized));
+                const withoutDefault = unique.filter(p => p !== DEFAULT_PROJECT);
+                return [DEFAULT_PROJECT, ...withoutDefault];
             };
 
             const [projects, setProjects] = useState([DEFAULT_PROJECT, 'Pessoal', 'Trabalho']);
