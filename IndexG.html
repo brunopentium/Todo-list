@@ -281,6 +281,7 @@
         function App() {
             // --- STATE ---
             const [tasks, setTasks] = useState([]);
+            const tasksRef = useRef([]);
             const [backendAvailable, setBackendAvailable] = useState(false);
             const [initialLoad, setInitialLoad] = useState(false);
             const syncTimeoutRef = useRef(null);
@@ -327,6 +328,10 @@
                 recurrence: { ...defaultRecurrence, ...(task.recurrence || {}) },
                 deferBusinessDays: Number(task.deferBusinessDays) || 0
             });
+
+            useEffect(() => {
+                tasksRef.current = tasks;
+            }, [tasks]);
 
             const toggleNotesVisibility = (taskId) => {
                 setExpandedNotes(prev => ({ ...prev, [taskId]: !prev[taskId] }));
@@ -437,6 +442,10 @@
                 };
 
                 const applyBackendData = (response) => {
+                    if (tasksRef.current.length > 0 && (!response?.tasks || response.tasks.length === 0)) {
+                        return;
+                    }
+
                     const serverTasks = (response?.tasks || []).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
                     setTasks(serverTasks);
 
@@ -841,17 +850,26 @@
                 reader.onload = (e) => {
                     try {
                         const data = JSON.parse(e.target.result);
-                        if(data.tasks) {
-                            const normalizedTasks = data.tasks.map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
-                            setTasks(normalizedTasks);
-                        }
-                        if(data.projects) setProjects(ensureDefaultProject(data.projects));
-                        if(data.config) {
-                            const importedPriorities = Object.entries(data.config.projectPriorities || {}).reduce((acc, [key, value]) => {
-                                acc[normalizeProjectName(key)] = value;
-                                return acc;
-                            }, {});
-                            setConfig({ ...defaultConfig, ...data.config, projectPriorities: importedPriorities });
+                        const normalizedTasks = data.tasks ? data.tasks.map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) })) : tasks;
+                        const importedProjects = data.projects ? ensureDefaultProject(data.projects) : projects;
+                        const importedPriorities = Object.entries((data.config || {}).projectPriorities || {}).reduce((acc, [key, value]) => {
+                            acc[normalizeProjectName(key)] = value;
+                            return acc;
+                        }, {});
+                        const importedConfig = data.config ? { ...defaultConfig, ...data.config, projectPriorities: importedPriorities } : config;
+
+                        setTasks(normalizedTasks);
+                        setProjects(importedProjects);
+                        setConfig(importedConfig);
+                        setInitialLoad(true);
+
+                        localStorage.setItem('tm_tasks', JSON.stringify(normalizedTasks));
+                        localStorage.setItem('tm_projects', JSON.stringify(importedProjects));
+                        localStorage.setItem('tm_config', JSON.stringify(importedConfig));
+
+                        if (backendAvailable) {
+                            runServerFunction('syncAllData', { tasks: normalizedTasks, settings: { config: importedConfig, projects: importedProjects } })
+                                .catch(err => console.error('Erro ao sincronizar backup importado com a planilha:', err));
                         }
                         alert('Backup restaurado com sucesso!');
                     } catch (err) {
