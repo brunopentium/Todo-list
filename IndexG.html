@@ -405,6 +405,35 @@
 
             // --- PERSISTENCE ---
             useEffect(() => {
+                const loadFromLocalStorage = () => {
+                    const savedTasks = localStorage.getItem('tm_tasks');
+                    const savedProjects = localStorage.getItem('tm_projects');
+                    const savedConfig = localStorage.getItem('tm_config');
+
+                    if (savedTasks) {
+                        const parsedTasks = JSON.parse(savedTasks).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
+                        setTasks(parsedTasks);
+                    }
+
+                    if (savedProjects) {
+                        setProjects(ensureDefaultProject(JSON.parse(savedProjects)));
+                    }
+
+                    if (savedConfig) {
+                        const parsedConfig = JSON.parse(savedConfig);
+                        const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
+                            acc[normalizeProjectName(key)] = value;
+                            return acc;
+                        }, {});
+                        setConfig({
+                            ...defaultConfig,
+                            ...parsedConfig,
+                            projectPriorities,
+                            secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
+                        });
+                    }
+                };
+
                 const hasBackend = typeof google !== 'undefined' && google.script && google.script.run;
                 setBackendAvailable(hasBackend);
 
@@ -436,9 +465,12 @@
                                 projectPriorities,
                                 secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
                             });
+
+                            setInitialLoad(true);
                         } catch (err) {
                             console.error('Erro ao carregar dados do Apps Script:', err);
-                        } finally {
+                            setBackendAvailable(false);
+                            loadFromLocalStorage();
                             setInitialLoad(true);
                         }
                     };
@@ -447,27 +479,7 @@
                     return;
                 }
 
-                const savedTasks = localStorage.getItem('tm_tasks');
-                const savedProjects = localStorage.getItem('tm_projects');
-                const savedConfig = localStorage.getItem('tm_config');
-                if (savedTasks) {
-                    const parsedTasks = JSON.parse(savedTasks).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
-                    setTasks(parsedTasks);
-                }
-                if (savedProjects) setProjects(ensureDefaultProject(JSON.parse(savedProjects)));
-                if (savedConfig) {
-                    const parsedConfig = JSON.parse(savedConfig);
-                    const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
-                        acc[normalizeProjectName(key)] = value;
-                        return acc;
-                    }, {});
-                    setConfig({
-                        ...defaultConfig,
-                        ...parsedConfig,
-                        projectPriorities,
-                        secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
-                    });
-                }
+                loadFromLocalStorage();
                 setInitialLoad(true);
             }, []);
 
