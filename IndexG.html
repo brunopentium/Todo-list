@@ -143,9 +143,15 @@
         };
 
         // --- ICONS (Lucide wrapper for React) ---
+        const refreshIcons = () => {
+            if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+                lucide.createIcons();
+            }
+        };
+
         const Icon = ({ name, size = 20, className = "" }) => {
             useEffect(() => {
-                lucide.createIcons();
+                refreshIcons();
             }, [name]);
             return <i data-lucide={name} className={className} style={{ width: size, height: size }}></i>;
         };
@@ -499,7 +505,7 @@
             useEffect(() => {
                 if (!initialLoad) return;
 
-                lucide.createIcons();
+                refreshIcons();
                 if (!backendAvailable) return;
 
                 if (syncTimeoutRef.current) {
