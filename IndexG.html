@@ -436,6 +436,33 @@
                     }
                 };
 
+                const applyBackendData = (response) => {
+                    const serverTasks = (response?.tasks || []).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
+                    setTasks(serverTasks);
+
+                    const storedSettings = response?.settings || {};
+                    const storedProjects = ensureDefaultProject(storedSettings.projects || []);
+                    const derivedProjects = ensureDefaultProject([
+                        ...storedProjects,
+                        ...serverTasks.map(t => t.project).filter(Boolean)
+                    ]);
+
+                    setProjects(derivedProjects);
+
+                    const parsedConfig = storedSettings.config ? { ...defaultConfig, ...storedSettings.config } : { ...defaultConfig, ...storedSettings };
+                    const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
+                        acc[normalizeProjectName(key)] = value;
+                        return acc;
+                    }, {});
+
+                    setConfig({
+                        ...defaultConfig,
+                        ...parsedConfig,
+                        projectPriorities,
+                        secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
+                    });
+                };
+
                 const loadFromBackend = async () => {
                     if (typeof google === 'undefined' || !google.script || !google.script.run) {
                         setBackendAvailable(false);
@@ -446,31 +473,7 @@
 
                     try {
                         const response = await runServerFunction('listData');
-                        const serverTasks = (response?.tasks || []).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
-                        setTasks(serverTasks);
-
-                        const storedSettings = response?.settings || {};
-                        const storedProjects = ensureDefaultProject(storedSettings.projects || []);
-                        const derivedProjects = ensureDefaultProject([
-                            ...storedProjects,
-                            ...serverTasks.map(t => t.project).filter(Boolean)
-                        ]);
-
-                        setProjects(derivedProjects);
-
-                        const parsedConfig = storedSettings.config ? { ...defaultConfig, ...storedSettings.config } : { ...defaultConfig, ...storedSettings };
-                        const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
-                            acc[normalizeProjectName(key)] = value;
-                            return acc;
-                        }, {});
-
-                        setConfig({
-                            ...defaultConfig,
-                            ...parsedConfig,
-                            projectPriorities,
-                            secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
-                        });
-
+                        applyBackendData(response);
                         ensureInitialLoad();
                         return true;
                     } catch (err) {
@@ -495,13 +498,23 @@
                     if (intervalId) clearInterval(intervalId);
                 };
 
+                const refreshFromBackend = () => {
+                    if (document.visibilityState === 'visible') {
+                        loadFromBackend();
+                    }
+                };
+
                 tryLoadBackend();
                 intervalId = setInterval(tryLoadBackend, 800);
+                window.addEventListener('focus', refreshFromBackend);
+                document.addEventListener('visibilitychange', refreshFromBackend);
 
                 return () => {
                     canceled = true;
                     clearInterval(intervalId);
                     clearTimeout(fallbackTimeout);
+                    window.removeEventListener('focus', refreshFromBackend);
+                    document.removeEventListener('visibilitychange', refreshFromBackend);
                 };
             }, []);
 
