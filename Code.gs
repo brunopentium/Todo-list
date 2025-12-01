@@ -49,21 +49,38 @@ function listData() {
   const sheet = getSheet_();
   const lastRow = sheet.getLastRow();
   const values = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues() : [];
+
+  const parseJsonSafe = (value, fallback) => {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value);
+    } catch (err) {
+      return fallback;
+    }
+  };
+
+  const formatDateCell = (value) => {
+    if (value instanceof Date) {
+      return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    return value || '';
+  };
+
   const tasks = values.map(row => ({
     id: row[0],
-    title: row[1],
-    date: row[2],
-    deadline: row[3],
-    status: row[4],
+    title: row[1] || '',
+    date: formatDateCell(row[2]),
+    deadline: formatDateCell(row[3]),
+    status: row[4] || 'Pendente',
     priority: row[5],
     difficulty: row[6],
-    project: row[7],
-    notes: row[8],
+    project: row[7] || '',
+    notes: row[8] || '',
     tags: row[9] ? row[9].split(',').map(s => s.trim()).filter(Boolean) : [],
-    subtasks: row[10] ? JSON.parse(row[10]) : [],
-    recurrence: row[11] ? JSON.parse(row[11]) : null,
+    subtasks: parseJsonSafe(row[10], []),
+    recurrence: parseJsonSafe(row[11], null),
     alertLevel: row[12],
-    metadata: row[13] ? JSON.parse(row[13]) : {},
+    metadata: parseJsonSafe(row[13], {}),
   }));
 
   const settingsJson = PropertiesService.getScriptProperties().getProperty(SETTINGS_KEY) || '{}';
