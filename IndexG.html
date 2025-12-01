@@ -288,6 +288,10 @@
             // --- STATE ---
             const [tasks, setTasks] = useState([]);
             const tasksRef = useRef([]);
+            const lastSyncedAtRef = useRef(0);
+            const lastLocalChangeRef = useRef(0);
+            const isApplyingBackendRef = useRef(false);
+            const hasBackendDataRef = useRef(false);
             const [backendAvailable, setBackendAvailable] = useState(false);
             const [initialLoad, setInitialLoad] = useState(false);
             const syncTimeoutRef = useRef(null);
@@ -327,6 +331,11 @@
                 endDate: ''
             });
 
+            const parseTimestamp = (value) => {
+                const parsed = Date.parse(value);
+                return Number.isNaN(parsed) ? 0 : parsed;
+            };
+
             const normalizeTask = (task) => ({
                 ...task,
                 project: normalizeProjectName(task.project),
@@ -338,6 +347,12 @@
             useEffect(() => {
                 tasksRef.current = tasks;
             }, [tasks]);
+
+            useEffect(() => {
+                if (!hasBackendDataRef.current) return;
+                if (isApplyingBackendRef.current) return;
+                lastLocalChangeRef.current = Date.now();
+            }, [tasks, projects, config]);
 
             const toggleNotesVisibility = (taskId) => {
                 setExpandedNotes(prev => ({ ...prev, [taskId]: !prev[taskId] }));
@@ -419,9 +434,31 @@
                 const ensureInitialLoad = () => setInitialLoad(prev => prev || true);
 
                 const applyBackendData = (response) => {
+                    const responseTimestamp = parseTimestamp(response?.lastUpdated);
+
+                    if (lastLocalChangeRef.current && responseTimestamp > 0 && responseTimestamp < lastLocalChangeRef.current) {
+                        return;
+                    }
+
+                    if (lastLocalChangeRef.current && responseTimestamp === 0) {
+                        return;
+                    }
+
+                    if (lastSyncedAtRef.current && responseTimestamp > 0 && responseTimestamp < lastSyncedAtRef.current) {
+                        return;
+                    }
+
+                    if (lastSyncedAtRef.current && responseTimestamp === 0) {
+                        return;
+                    }
+
                     if (tasksRef.current.length > 0 && (!response?.tasks || response.tasks.length === 0)) {
                         return;
                     }
+
+                    isApplyingBackendRef.current = true;
+
+                    hasBackendDataRef.current = true;
 
                     const serverTasks = (response?.tasks || []).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
                     setTasks(serverTasks);
@@ -447,6 +484,11 @@
                         projectPriorities,
                         secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
                     });
+
+                    if (responseTimestamp > 0) {
+                        lastSyncedAtRef.current = responseTimestamp;
+                    }
+                    isApplyingBackendRef.current = false;
                 };
 
                 const loadFromBackend = async () => {
@@ -514,6 +556,10 @@
 
                 syncTimeoutRef.current = setTimeout(() => {
                     runServerFunction('syncAllData', { tasks, settings: { config, projects } })
+                        .then(response => {
+                            const timestamp = parseTimestamp(response?.lastUpdated) || Date.now();
+                            lastSyncedAtRef.current = timestamp;
+                        })
                         .catch(err => console.error('Erro ao sincronizar dados com a planilha:', err));
                 }, 200);
             }, [tasks, projects, config, backendAvailable, initialLoad]);

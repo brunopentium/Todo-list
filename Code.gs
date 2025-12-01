@@ -1,6 +1,7 @@
 const TASKS_SPREADSHEET_PROPERTY = 'TASKS_SPREADSHEET_ID';
 const TASKS_SHEET_NAME = 'Tarefas';
 const SETTINGS_KEY = 'APP_SETTINGS_JSON';
+const LAST_SYNC_KEY = 'LAST_SYNC_TS';
 
 function getSpreadsheetId_() {
   const props = PropertiesService.getScriptProperties();
@@ -58,6 +59,7 @@ function listData() {
   const sheet = getSheet_();
   const lastRow = sheet.getLastRow();
   const values = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues() : [];
+  const props = PropertiesService.getScriptProperties();
 
   const parseJsonSafe = (value, fallback) => {
     if (!value) return fallback;
@@ -92,10 +94,12 @@ function listData() {
     metadata: parseJsonSafe(row[13], {}),
   }));
 
-  const settingsJson = PropertiesService.getScriptProperties().getProperty(SETTINGS_KEY) || '{}';
+  const settingsJson = props.getProperty(SETTINGS_KEY) || '{}';
   const settings = JSON.parse(settingsJson);
 
-  return { tasks, settings };
+  const lastUpdated = props.getProperty(LAST_SYNC_KEY) || null;
+
+  return { tasks, settings, lastUpdated };
 }
 
 function serializeTask_(task) {
@@ -186,7 +190,10 @@ function syncAllData(payload) {
   writeTasks_(sheet, tasks);
   saveSettings(settings);
 
-  return { savedTasks: tasks.length };
+  const timestamp = new Date().toISOString();
+  PropertiesService.getScriptProperties().setProperty(LAST_SYNC_KEY, timestamp);
+
+  return { savedTasks: tasks.length, lastUpdated: timestamp };
 }
 
 function resetStorage() {
@@ -195,6 +202,8 @@ function resetStorage() {
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
   }
-  PropertiesService.getScriptProperties().deleteProperty(SETTINGS_KEY);
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty(SETTINGS_KEY);
+  props.deleteProperty(LAST_SYNC_KEY);
   return true;
 }
