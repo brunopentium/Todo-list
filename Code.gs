@@ -69,6 +69,37 @@ function listData() {
   return { tasks, settings };
 }
 
+function serializeTask_(task) {
+  return [
+    task.id,
+    task.title || '',
+    task.date || '',
+    task.deadline || '',
+    task.status || 'Pendente',
+    task.priority || 1,
+    task.difficulty || 1,
+    task.project || '',
+    task.notes || '',
+    (task.tags || []).join(', '),
+    JSON.stringify(task.subtasks || []),
+    JSON.stringify(task.recurrence || null),
+    task.alertLevel || '',
+    JSON.stringify(task.metadata || {}),
+  ];
+}
+
+function writeTasks_(sheet, tasks) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
+  }
+
+  const serializedTasks = (tasks || []).map(serializeTask_);
+  if (serializedTasks.length) {
+    sheet.getRange(2, 1, serializedTasks.length, serializedTasks[0].length).setValues(serializedTasks);
+  }
+}
+
 function saveTask(task) {
   if (!task || !task.id) {
     throw new Error('Uma tarefa válida com ID é necessária.');
@@ -114,6 +145,18 @@ function saveSettings(settings) {
   const json = JSON.stringify(settings || {});
   PropertiesService.getScriptProperties().setProperty(SETTINGS_KEY, json);
   return settings;
+}
+
+function syncAllData(payload) {
+  const data = payload || {};
+  const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+  const settings = data.settings || {};
+
+  const sheet = getSheet_();
+  writeTasks_(sheet, tasks);
+  saveSettings(settings);
+
+  return { savedTasks: tasks.length };
 }
 
 function resetStorage() {
