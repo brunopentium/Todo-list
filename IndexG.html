@@ -412,35 +412,6 @@
             useEffect(() => {
                 const ensureInitialLoad = () => setInitialLoad(prev => prev || true);
 
-                const loadFromLocalStorage = () => {
-                    const savedTasks = localStorage.getItem('tm_tasks');
-                    const savedProjects = localStorage.getItem('tm_projects');
-                    const savedConfig = localStorage.getItem('tm_config');
-
-                    if (savedTasks) {
-                        const parsedTasks = JSON.parse(savedTasks).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
-                        setTasks(parsedTasks);
-                    }
-
-                    if (savedProjects) {
-                        setProjects(ensureDefaultProject(JSON.parse(savedProjects)));
-                    }
-
-                    if (savedConfig) {
-                        const parsedConfig = JSON.parse(savedConfig);
-                        const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
-                            acc[normalizeProjectName(key)] = value;
-                            return acc;
-                        }, {});
-                        setConfig({
-                            ...defaultConfig,
-                            ...parsedConfig,
-                            projectPriorities,
-                            secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
-                        });
-                    }
-                };
-
                 const applyBackendData = (response) => {
                     if (tasksRef.current.length > 0 && (!response?.tasks || response.tasks.length === 0)) {
                         return;
@@ -492,8 +463,6 @@
                     }
                 };
 
-                loadFromLocalStorage();
-
                 let canceled = false;
                 let intervalId;
                 const fallbackTimeout = setTimeout(ensureInitialLoad, 2000);
@@ -531,23 +500,16 @@
                 if (!initialLoad) return;
 
                 lucide.createIcons();
+                if (!backendAvailable) return;
 
-                if (backendAvailable) {
-                    if (syncTimeoutRef.current) {
-                        clearTimeout(syncTimeoutRef.current);
-                    }
-
-                    syncTimeoutRef.current = setTimeout(() => {
-                        runServerFunction('syncAllData', { tasks, settings: { config, projects } })
-                            .catch(err => console.error('Erro ao sincronizar dados com a planilha:', err));
-                    }, 200);
-
-                    return;
+                if (syncTimeoutRef.current) {
+                    clearTimeout(syncTimeoutRef.current);
                 }
 
-                localStorage.setItem('tm_tasks', JSON.stringify(tasks));
-                localStorage.setItem('tm_projects', JSON.stringify(projects));
-                localStorage.setItem('tm_config', JSON.stringify(config));
+                syncTimeoutRef.current = setTimeout(() => {
+                    runServerFunction('syncAllData', { tasks, settings: { config, projects } })
+                        .catch(err => console.error('Erro ao sincronizar dados com a planilha:', err));
+                }, 200);
             }, [tasks, projects, config, backendAvailable, initialLoad]);
 
             // --- LOGIC ---
@@ -862,10 +824,6 @@
                         setProjects(importedProjects);
                         setConfig(importedConfig);
                         setInitialLoad(true);
-
-                        localStorage.setItem('tm_tasks', JSON.stringify(normalizedTasks));
-                        localStorage.setItem('tm_projects', JSON.stringify(importedProjects));
-                        localStorage.setItem('tm_config', JSON.stringify(importedConfig));
 
                         if (backendAvailable) {
                             runServerFunction('syncAllData', { tasks: normalizedTasks, settings: { config: importedConfig, projects: importedProjects } })
