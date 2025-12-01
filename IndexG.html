@@ -434,53 +434,71 @@
                     }
                 };
 
-                const hasBackend = typeof google !== 'undefined' && google.script && google.script.run;
-                setBackendAvailable(hasBackend);
+                const loadFromBackend = async () => {
+                    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+                        setBackendAvailable(false);
+                        return false;
+                    }
 
-                if (hasBackend) {
-                    const loadFromBackend = async () => {
-                        try {
-                            const response = await runServerFunction('listData');
-                            const serverTasks = (response?.tasks || []).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
-                            setTasks(serverTasks);
+                    setBackendAvailable(true);
 
-                            const storedSettings = response?.settings || {};
-                            const storedProjects = ensureDefaultProject(storedSettings.projects || []);
-                            const derivedProjects = ensureDefaultProject([
-                                ...storedProjects,
-                                ...serverTasks.map(t => t.project).filter(Boolean)
-                            ]);
+                    try {
+                        const response = await runServerFunction('listData');
+                        const serverTasks = (response?.tasks || []).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
+                        setTasks(serverTasks);
 
-                            setProjects(derivedProjects);
+                        const storedSettings = response?.settings || {};
+                        const storedProjects = ensureDefaultProject(storedSettings.projects || []);
+                        const derivedProjects = ensureDefaultProject([
+                            ...storedProjects,
+                            ...serverTasks.map(t => t.project).filter(Boolean)
+                        ]);
 
-                            const parsedConfig = storedSettings.config ? { ...defaultConfig, ...storedSettings.config } : { ...defaultConfig, ...storedSettings };
-                            const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
-                                acc[normalizeProjectName(key)] = value;
-                                return acc;
-                            }, {});
+                        setProjects(derivedProjects);
 
-                            setConfig({
-                                ...defaultConfig,
-                                ...parsedConfig,
-                                projectPriorities,
-                                secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
-                            });
+                        const parsedConfig = storedSettings.config ? { ...defaultConfig, ...storedSettings.config } : { ...defaultConfig, ...storedSettings };
+                        const projectPriorities = Object.entries(parsedConfig.projectPriorities || {}).reduce((acc, [key, value]) => {
+                            acc[normalizeProjectName(key)] = value;
+                            return acc;
+                        }, {});
 
-                            setInitialLoad(true);
-                        } catch (err) {
-                            console.error('Erro ao carregar dados do Apps Script:', err);
-                            setBackendAvailable(false);
-                            loadFromLocalStorage();
-                            setInitialLoad(true);
-                        }
-                    };
+                        setConfig({
+                            ...defaultConfig,
+                            ...parsedConfig,
+                            projectPriorities,
+                            secondarySortLevels: normalizeSecondarySortLevels(parsedConfig.secondarySortLevels)
+                        });
 
-                    loadFromBackend();
-                    return;
-                }
+                        setInitialLoad(true);
+                        return true;
+                    } catch (err) {
+                        console.error('Erro ao carregar dados do Apps Script:', err);
+                        setBackendAvailable(false);
+                        return false;
+                    }
+                };
 
                 loadFromLocalStorage();
                 setInitialLoad(true);
+
+                let canceled = false;
+                let intervalId;
+
+                const tryLoadBackend = async () => {
+                    if (canceled) return;
+                    const loaded = await loadFromBackend();
+                    if (!loaded) return;
+                    canceled = true;
+                    if (intervalId) clearInterval(intervalId);
+                };
+
+                tryLoadBackend();
+                intervalId = setInterval(tryLoadBackend, 800);
+
+                return () => {
+                    canceled = true;
+                    clearInterval(intervalId);
+                };
             }, []);
 
             useEffect(() => {
