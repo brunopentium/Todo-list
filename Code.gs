@@ -156,6 +156,13 @@ function syncAllData(payload) {
   const settings = data.settings || {};
 
   const sheet = getSheet_();
+  const hasExistingTasks = sheet.getLastRow() > 1;
+
+  if (tasks.length === 0 && hasExistingTasks) {
+    saveSettings(settings);
+    return { savedTasks: 0, skippedOverwrite: true };
+  }
+
   writeTasks_(sheet, tasks);
   saveSettings(settings);
 
