@@ -283,7 +283,7 @@
             const [tasks, setTasks] = useState([]);
             const [backendAvailable, setBackendAvailable] = useState(false);
             const [initialLoad, setInitialLoad] = useState(false);
-            const lastTaskIdsRef = useRef(new Set());
+            const syncTimeoutRef = useRef(null);
             const normalizeProjectName = (name) => name === 'Geral' ? DEFAULT_PROJECT : (name || DEFAULT_PROJECT);
             const ensureDefaultProject = (list) => {
                 const sanitized = list.map(p => normalizeProjectName(p));
@@ -414,7 +414,6 @@
                             const response = await runServerFunction('listData');
                             const serverTasks = (response?.tasks || []).map(t => normalizeTask({ ...t, project: normalizeProjectName(t.project) }));
                             setTasks(serverTasks);
-                            lastTaskIdsRef.current = new Set(serverTasks.map(t => t.id));
 
                             const storedSettings = response?.settings || {};
                             const storedProjects = ensureDefaultProject(storedSettings.projects || []);
@@ -478,23 +477,14 @@
                 lucide.createIcons();
 
                 if (backendAvailable) {
-                    const currentIds = new Set(tasks.map(t => t.id));
-                    const previousIds = lastTaskIdsRef.current;
+                    if (syncTimeoutRef.current) {
+                        clearTimeout(syncTimeoutRef.current);
+                    }
 
-                    previousIds.forEach(id => {
-                        if (!currentIds.has(id)) {
-                            runServerFunction('deleteTask', id).catch(err => console.error('Erro ao remover tarefa:', err));
-                        }
-                    });
-
-                    lastTaskIdsRef.current = currentIds;
-
-                    tasks.forEach(task => {
-                        runServerFunction('saveTask', task).catch(err => console.error('Erro ao salvar tarefa:', err));
-                    });
-
-                    runServerFunction('saveSettings', { config, projects })
-                        .catch(err => console.error('Erro ao salvar configurações:', err));
+                    syncTimeoutRef.current = setTimeout(() => {
+                        runServerFunction('syncAllData', { tasks, settings: { config, projects } })
+                            .catch(err => console.error('Erro ao sincronizar dados com a planilha:', err));
+                    }, 200);
 
                     return;
                 }
