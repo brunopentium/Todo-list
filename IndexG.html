@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <title>Todo List - Apps Script</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f7fafc; margin: 0; padding: 0; }
+    header { background: #2563eb; color: #fff; padding: 16px; }
+    main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.08); padding: 16px; margin-bottom: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .row label { font-weight: bold; color: #334155; display: block; margin-bottom: 4px; }
+    .row input, .row textarea, .row select { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .row .col { flex: 1 1 200px; min-width: 220px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button { border: none; border-radius: 6px; padding: 10px 14px; cursor: pointer; font-weight: bold; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-secondary { background: #e2e8f0; color: #1f2937; }
+    .btn-danger { background: #ef4444; color: #fff; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+    th { background: #f8fafc; text-transform: uppercase; font-size: 12px; letter-spacing: .04em; color: #475569; }
+    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #e0f2fe; color: #0369a1; font-size: 12px; margin-right: 6px; }
+    .muted { color: #6b7280; font-size: 13px; }
+    .status-badge { padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+    .status-pendente { background: #fff7ed; color: #c2410c; }
+    .status-em-progresso { background: #ecfeff; color: #0e7490; }
+    .status-concluida { background: #ecfdf3; color: #15803d; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Todo List - Google Sheets</h1>
+    <p>Armazena tarefas e configurações diretamente em uma planilha conectada.</p>
+  </header>
+  <main>
+    <div class="card" id="statusBox">
+      <div id="statusMessage" class="muted">Carregando dados...</div>
+      <div class="actions" style="margin-top: 8px;">
+        <button class="btn-secondary" onclick="syncData()">🔄 Recarregar</button>
+        <button class="btn-secondary" onclick="resetStorage()">🧹 Limpar planilha</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Nova Tarefa</h2>
+      <div class="row">
+        <div class="col">
+          <label>Título</label>
+          <input id="title" placeholder="Ex: Enviar relatório" />
+        </div>
+        <div class="col">
+          <label>Projeto</label>
+          <input id="project" placeholder="Área / Cliente" />
+        </div>
+        <div class="col">
+          <label>Status</label>
+          <select id="status">
+            <option value="Pendente">Pendente</option>
+            <option value="Em Progresso">Em Progresso</option>
+            <option value="Concluída">Concluída</option>
+          </select>
+        </div>
+        <div class="col">
+          <label>Data</label>
+          <input id="date" type="date" />
+        </div>
+        <div class="col">
+          <label>Deadline</label>
+          <input id="deadline" type="date" />
+        </div>
+      </div>
+      <div class="row" style="margin-top: 12px;">
+        <div class="col">
+          <label>Prioridade (1-5)</label>
+          <input id="priority" type="number" min="1" max="5" value="1" />
+        </div>
+        <div class="col">
+          <label>Dificuldade (1-5)</label>
+          <input id="difficulty" type="number" min="1" max="5" value="1" />
+        </div>
+        <div class="col">
+          <label>Tags (separe por vírgula)</label>
+          <input id="tags" placeholder="financeiro, urgente" />
+        </div>
+      </div>
+      <div class="row" style="margin-top: 12px;">
+        <div class="col" style="flex: 1 1 100%;">
+          <label>Observações</label>
+          <textarea id="notes" rows="3" placeholder="Instruções, links, checklist..."></textarea>
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 12px;">
+        <button class="btn-primary" onclick="addTask()">➕ Salvar tarefa</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tarefas</h2>
+      <div id="tasksContainer" class="muted">Nenhuma tarefa encontrada.</div>
+    </div>
+
+    <div class="card">
+      <h2>Configurações</h2>
+      <div class="row">
+        <div class="col">
+          <label>Alerta padrão</label>
+          <select id="alertLevel">
+            <option value="">Nenhum</option>
+            <option value="Informativo">Informativo</option>
+            <option value="Atenção">Atenção</option>
+            <option value="Crítico">Crítico</option>
+          </select>
+        </div>
+        <div class="col">
+          <label>Layout</label>
+          <select id="layout">
+            <option value="lista">Lista</option>
+            <option value="kanban">Kanban (visão simplificada)</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 12px;">
+        <button class="btn-primary" onclick="saveSettings()">💾 Salvar configurações</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let tasks = [];
+    let settings = {};
+
+    function setStatus(msg) {
+      document.getElementById('statusMessage').textContent = msg;
+    }
+
+    function renderTasks() {
+      const container = document.getElementById('tasksContainer');
+      if (!tasks.length) {
+        container.innerHTML = '<p class="muted">Nenhuma tarefa registrada.</p>';
+        return;
+      }
+
+      const rows = tasks.map(t => {
+        const tags = (t.tags || []).map(tag => `<span class="pill">${tag}</span>`).join('');
+        const statusClass = (t.status || 'Pendente').toLowerCase().replace(/\s+/g, '-');
+        return `
+          <tr>
+            <td><strong>${t.title || 'Sem título'}</strong><div class="muted">${t.project || ''}</div></td>
+            <td>${t.date || '-'}</td>
+            <td>${t.deadline || '-'}</td>
+            <td><span class="status-badge status-${statusClass}">${t.status || 'Pendente'}</span></td>
+            <td>${t.priority || 1}</td>
+            <td>${t.difficulty || 1}</td>
+            <td>${tags}</td>
+            <td>
+              <div class="actions">
+                <button class="btn-secondary" onclick="editTask('${t.id}')">✏️</button>
+                <button class="btn-danger" onclick="removeTask('${t.id}')">🗑️</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      container.innerHTML = `
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Título</th>
+                <th>Data</th>
+                <th>Deadline</th>
+                <th>Status</th>
+                <th>Prioridade</th>
+                <th>Dificuldade</th>
+                <th>Tags</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    function syncData() {
+      setStatus('Sincronizando com a planilha...');
+      google.script.run.withSuccessHandler(data => {
+        tasks = data.tasks || [];
+        settings = data.settings || {};
+        document.getElementById('alertLevel').value = settings.alertLevel || '';
+        document.getElementById('layout').value = settings.layout || 'lista';
+        renderTasks();
+        setStatus(`Carregado ${tasks.length} tarefas do Sheets.`);
+      }).withFailureHandler(err => {
+        console.error(err);
+        setStatus('Erro ao carregar: ' + err.message);
+      }).listData();
+    }
+
+    function collectTaskPayload(idOverride) {
+      const title = document.getElementById('title').value.trim();
+      if (!title) {
+        alert('Preencha um título para a tarefa.');
+        return null;
+      }
+      return {
+        id: idOverride || 'task-' + Date.now(),
+        title,
+        project: document.getElementById('project').value.trim(),
+        status: document.getElementById('status').value,
+        date: document.getElementById('date').value,
+        deadline: document.getElementById('deadline').value,
+        priority: Number(document.getElementById('priority').value) || 1,
+        difficulty: Number(document.getElementById('difficulty').value) || 1,
+        tags: document.getElementById('tags').value.split(',').map(t => t.trim()).filter(Boolean),
+        notes: document.getElementById('notes').value,
+        subtasks: [],
+        recurrence: null,
+        alertLevel: document.getElementById('alertLevel').value,
+        metadata: { updatedAt: new Date().toISOString() },
+      };
+    }
+
+    function addTask() {
+      const payload = collectTaskPayload();
+      if (!payload) return;
+      setStatus('Salvando tarefa...');
+      google.script.run.withSuccessHandler(() => {
+        setStatus('Tarefa salva na planilha.');
+        clearForm();
+        syncData();
+      }).withFailureHandler(err => {
+        console.error(err);
+        setStatus('Erro ao salvar: ' + err.message);
+      }).saveTask(payload);
+    }
+
+    function editTask(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+      document.getElementById('title').value = task.title || '';
+      document.getElementById('project').value = task.project || '';
+      document.getElementById('status').value = task.status || 'Pendente';
+      document.getElementById('date').value = task.date || '';
+      document.getElementById('deadline').value = task.deadline || '';
+      document.getElementById('priority').value = task.priority || 1;
+      document.getElementById('difficulty').value = task.difficulty || 1;
+      document.getElementById('tags').value = (task.tags || []).join(', ');
+      document.getElementById('notes').value = task.notes || '';
+      setStatus('Editando tarefa. Salve para sobrescrever.');
+      document.querySelector('.btn-primary').onclick = function() {
+        const payload = collectTaskPayload(id);
+        if (!payload) return;
+        setStatus('Atualizando tarefa...');
+        google.script.run.withSuccessHandler(() => {
+          setStatus('Tarefa atualizada.');
+          clearForm();
+          document.querySelector('.btn-primary').onclick = addTask;
+          syncData();
+        }).withFailureHandler(err => {
+          console.error(err);
+          setStatus('Erro ao atualizar: ' + err.message);
+        }).saveTask(payload);
+      };
+    }
+
+    function removeTask(id) {
+      if (!confirm('Deseja remover esta tarefa?')) return;
+      setStatus('Excluindo tarefa...');
+      google.script.run.withSuccessHandler(() => {
+        setStatus('Tarefa removida.');
+        syncData();
+      }).withFailureHandler(err => {
+        console.error(err);
+        setStatus('Erro ao remover: ' + err.message);
+      }).deleteTask(id);
+    }
+
+    function clearForm() {
+      document.getElementById('title').value = '';
+      document.getElementById('project').value = '';
+      document.getElementById('status').value = 'Pendente';
+      document.getElementById('date').value = '';
+      document.getElementById('deadline').value = '';
+      document.getElementById('priority').value = 1;
+      document.getElementById('difficulty').value = 1;
+      document.getElementById('tags').value = '';
+      document.getElementById('notes').value = '';
+      document.querySelector('.btn-primary').onclick = addTask;
+    }
+
+    function saveSettings() {
+      const payload = {
+        alertLevel: document.getElementById('alertLevel').value,
+        layout: document.getElementById('layout').value,
+        updatedAt: new Date().toISOString(),
+      };
+      setStatus('Salvando configurações...');
+      google.script.run.withSuccessHandler(() => {
+        setStatus('Configurações salvas na propriedade de script.');
+      }).withFailureHandler(err => {
+        console.error(err);
+        setStatus('Erro ao salvar configurações: ' + err.message);
+      }).saveSettings(payload);
+    }
+
+    function resetStorage() {
+      if (!confirm('Limpar todas as tarefas e configurações?')) return;
+      setStatus('Limpando planilha...');
+      google.script.run.withSuccessHandler(() => {
+        tasks = [];
+        settings = {};
+        renderTasks();
+        setStatus('Planilha e configurações limpas.');
+      }).withFailureHandler(err => {
+        console.error(err);
+        setStatus('Erro ao limpar: ' + err.message);
+      }).resetStorage();
+    }
+
+    document.addEventListener('DOMContentLoaded', syncData);
+  </script>
+</body>
+</html>
