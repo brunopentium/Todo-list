@@ -326,6 +326,7 @@
             const [subtaskDrafts, setSubtaskDrafts] = useState({});
             const [reprogramOffset, setReprogramOffset] = useState('');
             const [weeklyPlan, setWeeklyPlan] = useState({});
+            const [groupPlannerByProject, setGroupPlannerByProject] = useState(false);
             
             // Configurações padrão
             const [config, setConfig] = useState(defaultConfig);
@@ -557,6 +558,7 @@
 
                 refreshIcons();
                 if (!backendAvailable) return;
+                if (!hasBackendDataRef.current) return;
 
                 if (syncTimeoutRef.current) {
                     clearTimeout(syncTimeoutRef.current);
@@ -964,6 +966,22 @@
                 [tasks]
             );
 
+            const planningTasksByProject = useMemo(() => {
+                const groups = planningTasks.reduce((acc, task) => {
+                    const projectName = task.project || DEFAULT_PROJECT;
+                    if (!acc[projectName]) acc[projectName] = [];
+                    acc[projectName].push(task);
+                    return acc;
+                }, {});
+
+                return Object.entries(groups)
+                    .map(([projectName, projectTasks]) => ({
+                        projectName,
+                        projectTasks,
+                    }))
+                    .sort((a, b) => a.projectName.localeCompare(b.projectName));
+            }, [planningTasks]);
+
             const isExecutionAfterDeadline = (task) => {
                 if (task.status === 'Recorrente') return false;
                 const executionDate = getEffectiveDate(task);
@@ -1032,6 +1050,45 @@
                     const newDate = addDays(targetMonday, plan.weekday);
                     return { ...task, date: newDate, deferBusinessDays: 0 };
                 }));
+            };
+
+            const renderPlannerRow = (task) => {
+                const selection = weeklyPlan[task.id] || {};
+                return (
+                    <tr key={task.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 align-top font-semibold text-slate-700">{task.project}</td>
+                        <td className="px-4 py-3 align-top text-slate-800">{task.title}</td>
+                        {weekOptions.map(option => {
+                            const isWeekSelected = selection.weekOffset === option.offset;
+                            return (
+                                <td key={option.offset} className="px-3 py-3 align-top">
+                                    <button
+                                        type="button"
+                                        onClick={() => selectWeekForTask(task.id, option.offset)}
+                                        className={`w-full text-xs font-bold border rounded-md px-2 py-1 transition ${isWeekSelected ? 'bg-amber-100 border-amber-300 text-amber-900 shadow-sm' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
+                                    >
+                                        {option.label}
+                                    </button>
+                                    <div className="flex justify-center gap-1 mt-2">
+                                        {weekdayCompactLabels.map((dayLabel, idx) => {
+                                            const isDaySelected = isWeekSelected && selection.weekday === idx;
+                                            return (
+                                                <button
+                                                    key={`${task.id}-${option.offset}-${idx}`}
+                                                    type="button"
+                                                    onClick={() => selectDayForTask(task.id, option.offset, idx)}
+                                                    className={`w-7 h-7 text-[11px] font-bold rounded border transition ${isDaySelected ? 'bg-emerald-500 text-white border-emerald-500' : isWeekSelected ? 'bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
+                                                >
+                                                    {dayLabel}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </td>
+                            );
+                        })}
+                    </tr>
+                );
             };
 
             const getCardBackground = (task) => {
@@ -1503,6 +1560,19 @@
                                     <span className="text-sm font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">{planningTasks.length} tarefas</span>
                                 </div>
 
+                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                                    <p className="text-sm text-slate-600">Organize as tarefas por semana antes de aplicar na agenda.</p>
+                                    <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded border-slate-300"
+                                            checked={groupPlannerByProject}
+                                            onChange={(e) => setGroupPlannerByProject(e.target.checked)}
+                                        />
+                                        Agrupar por projeto
+                                    </label>
+                                </div>
+
                                 <div className="bg-white rounded-lg shadow overflow-auto">
                                     <table className="min-w-full text-sm">
                                         <thead className="bg-slate-50 text-slate-600 text-left">
@@ -1520,44 +1590,18 @@
                                                     <td colSpan={weekOptions.length + 2} className="px-4 py-6 text-center text-slate-400">Nenhuma tarefa pendente para replanejar.</td>
                                                 </tr>
                                             )}
-                                            {planningTasks.map(task => {
-                                                const selection = weeklyPlan[task.id] || {};
-                                                return (
-                                                    <tr key={task.id} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="px-4 py-3 align-top font-semibold text-slate-700">{task.project}</td>
-                                                        <td className="px-4 py-3 align-top text-slate-800">{task.title}</td>
-                                                        {weekOptions.map(option => {
-                                                            const isWeekSelected = selection.weekOffset === option.offset;
-                                                            return (
-                                                                <td key={option.offset} className="px-3 py-3 align-top">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => selectWeekForTask(task.id, option.offset)}
-                                                                        className={`w-full text-xs font-bold border rounded-md px-2 py-1 transition ${isWeekSelected ? 'bg-amber-100 border-amber-300 text-amber-900 shadow-sm' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
-                                                                    >
-                                                                        {option.label}
-                                                                    </button>
-                                                                    <div className="flex justify-center gap-1 mt-2">
-                                                                        {weekdayCompactLabels.map((dayLabel, idx) => {
-                                                                            const isDaySelected = isWeekSelected && selection.weekday === idx;
-                                                                            return (
-                                                                                <button
-                                                                                    key={`${task.id}-${option.offset}-${idx}`}
-                                                                                    type="button"
-                                                                                    onClick={() => selectDayForTask(task.id, option.offset, idx)}
-                                                                                    className={`w-7 h-7 text-[11px] font-bold rounded border transition ${isDaySelected ? 'bg-emerald-500 text-white border-emerald-500' : isWeekSelected ? 'bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
-                                                                                >
-                                                                                    {dayLabel}
-                                                                                </button>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                </td>
-                                                            );
-                                                        })}
+                                            {!groupPlannerByProject && planningTasks.map(renderPlannerRow)}
+                                            {groupPlannerByProject && planningTasksByProject.map(({ projectName, projectTasks }) => (
+                                                <React.Fragment key={projectName}>
+                                                    <tr className="bg-emerald-50">
+                                                        <td colSpan={weekOptions.length + 2} className="px-4 py-2 font-semibold text-emerald-800">
+                                                            {projectName}
+                                                            <span className="text-xs text-emerald-700 ml-2">{projectTasks.length} tarefa(s)</span>
+                                                        </td>
                                                     </tr>
-                                                );
-                                            })}
+                                                    {projectTasks.map(renderPlannerRow)}
+                                                </React.Fragment>
+                                            ))}
                                         </tbody>
                                     </table>
                                 </div>
