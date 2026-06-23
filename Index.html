@@ -1,85 +1,49 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TaskMaster Offline</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo List</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #f8fafc;
+      font-family: Arial, sans-serif;
+    }
 
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    .app-frame {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+    }
 
-    <style id="app-style">
-        body {
-            min-height: 100vh;
-            margin: 0;
-            display: grid;
-            place-items: center;
-            background: #f8fafc;
-            color: #0f172a;
-            font-family: Arial, sans-serif;
-        }
-
-        .loading {
-            width: min(90vw, 420px);
-            text-align: center;
-            line-height: 1.5;
-        }
-    </style>
+    .fallback {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 2;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+    }
+  </style>
 </head>
-<body class="bg-slate-100 text-slate-800 font-sans">
-    <div id="root">
-        <main class="loading">
-            <h1>Todo List</h1>
-            <p>Carregando aplicativo...</p>
-        </main>
-    </div>
-
-    <script>
-        (async () => {
-            try {
-                const sourceUrl = 'https://raw.githubusercontent.com/brunopentium/Todo-list/25f4d5c68e83ebf7fa9a8b5007c341c92e071a3f/Index.html';
-                const response = await fetch(sourceUrl);
-
-                if (!response.ok) {
-                    throw new Error(`Falha ao carregar o app (${response.status}).`);
-                }
-
-                const html = await response.text();
-                const sourceDoc = new DOMParser().parseFromString(html, 'text/html');
-                const styles = Array.from(sourceDoc.querySelectorAll('style'))
-                    .map(style => style.textContent)
-                    .join('\n');
-                const appSource = sourceDoc.querySelector('script[type="text/babel"]')?.textContent;
-
-                if (!appSource) {
-                    throw new Error('Codigo do app nao encontrado.');
-                }
-
-                document.getElementById('app-style').textContent = styles;
-
-                const compiled = Babel.transform(appSource, {
-                    presets: [
-                        ['env', { modules: false }],
-                        ['react', { runtime: 'classic' }]
-                    ]
-                }).code;
-
-                const appScript = document.createElement('script');
-                appScript.textContent = compiled;
-                document.body.appendChild(appScript);
-            } catch (error) {
-                console.error(error);
-                document.getElementById('root').innerHTML = `
-                    <main class="loading">
-                        <h1>Erro ao abrir o app</h1>
-                        <p>${error.message}</p>
-                    </main>
-                `;
-            }
-        })();
-    </script>
+<body>
+  <iframe
+    class="app-frame"
+    title="Todo List"
+    src="https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec"
+    allow="clipboard-read; clipboard-write"
+  ></iframe>
+  <a class="fallback" href="https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec" target="_blank" rel="noopener">Abrir direto</a>
 </body>
 </html>
