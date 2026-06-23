@@ -3,47 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="0; url=https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec">
   <title>Todo List</title>
   <style>
-    html,
     body {
-      width: 100%;
-      height: 100%;
+      min-height: 100vh;
       margin: 0;
+      display: grid;
+      place-items: center;
       background: #f8fafc;
+      color: #0f172a;
       font-family: Arial, sans-serif;
     }
 
-    .app-frame {
-      width: 100%;
-      height: 100%;
-      border: 0;
-      display: block;
+    main {
+      width: min(90vw, 420px);
+      text-align: center;
+      line-height: 1.5;
     }
 
-    .fallback {
-      position: fixed;
-      right: 16px;
-      bottom: 16px;
-      z-index: 2;
-      padding: 10px 14px;
-      border-radius: 8px;
-      background: #0f172a;
-      color: #fff;
-      font-size: 14px;
+    a {
+      color: #2563eb;
       font-weight: 700;
-      text-decoration: none;
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
     }
   </style>
 </head>
 <body>
-  <iframe
-    class="app-frame"
-    title="Todo List"
-    src="https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec"
-    allow="clipboard-read; clipboard-write"
-  ></iframe>
-  <a class="fallback" href="https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec" target="_blank" rel="noopener">Abrir direto</a>
+  <main>
+    <h1>Todo List</h1>
+    <p>Redirecionando para o aplicativo conectado a planilha...</p>
+    <p><a href="https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec">Abrir aplicativo</a></p>
+  </main>
+  <script>
+    window.location.replace('https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec');
+  </script>
 </body>
 </html>
