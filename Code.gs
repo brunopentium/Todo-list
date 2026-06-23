@@ -33,9 +33,53 @@ function getSpreadsheetId_() {
   throw new Error('Defina a propriedade de script TASKS_SPREADSHEET_ID com o ID da planilha alvo.');
 }
 
+function patchIndexHtml_(html) {
+  const replacements = [
+    [
+      "const STATUS_OPTIONS = ['Em Andamento', 'Recorrente', 'Concluída', 'Cancelada'];",
+      "const STATUS_OPTIONS = ['Em Andamento', 'Reserva', 'Recorrente', 'Concluída', 'Cancelada'];"
+    ],
+    [
+      "'Em Andamento': 'bg-blue-100 text-blue-700',\n            'Concluída': 'bg-green-100 text-green-700',",
+      "'Em Andamento': 'bg-blue-100 text-blue-700',\n            'Reserva': 'bg-amber-100 text-amber-800',\n            'Concluída': 'bg-green-100 text-green-700',"
+    ],
+    [
+      "if (task.status === 'Recorrente') return 'border-l-8 border-l-slate-400';",
+      "if (task.status === 'Recorrente') return 'border-l-8 border-l-slate-400';\n            if (task.status === 'Reserva') return 'border-l-8 border-l-amber-300';"
+    ],
+    [
+      "if (task.status === 'Concluída' || task.status === 'Cancelada' || !task.deadline) return null;",
+      "if (task.status === 'Concluída' || task.status === 'Cancelada' || task.status === 'Reserva' || !task.deadline) return null;"
+    ],
+    [
+      "<option>Em Andamento</option>\n                                            <option>Concluída</option>",
+      "<option>Em Andamento</option>\n                                            <option>Reserva</option>\n                                            <option>Concluída</option>"
+    ],
+    [
+      "<option>Em Andamento</option>\n                                <option>Concluída</option>",
+      "<option>Em Andamento</option>\n                                <option>Reserva</option>\n                                <option>Concluída</option>"
+    ]
+  ];
+
+  let patched = html;
+  replacements.forEach(([from, to]) => {
+    patched = patched.split(from).join(to);
+  });
+
+  patched = patched
+    .split("!['Concluída', 'Cancelada'].includes(t.status)")
+    .join("!['Concluída', 'Cancelada', 'Reserva'].includes(t.status)")
+    .split("!['Concluída', 'Cancelada'].includes(task.status)")
+    .join("!['Concluída', 'Cancelada', 'Reserva'].includes(task.status)")
+    .split("t.status !== 'Concluída' && t.status !== 'Cancelada'")
+    .join("!['Concluída', 'Cancelada', 'Reserva'].includes(t.status)");
+
+  return patched;
+}
+
 function doGet() {
-  return HtmlService.createTemplateFromFile('IndexG')
-    .evaluate()
+  const html = HtmlService.createHtmlOutputFromFile('IndexG').getContent();
+  return HtmlService.createHtmlOutput(patchIndexHtml_(html))
     .setTitle('Todo List - Apps Script')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
