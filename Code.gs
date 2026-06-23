@@ -1,4 +1,5 @@
 const TASKS_SPREADSHEET_PROPERTY = 'TASKS_SPREADSHEET_ID';
+const DEFAULT_TASKS_SPREADSHEET_ID = '1oVnSqRuSd60bnHxFL_zmyiesmZyt-9YAT1M2cSzOg1U';
 const TASKS_SHEET_NAME = 'Tarefas';
 const SETTINGS_KEY = 'APP_SETTINGS_JSON';
 const LAST_SYNC_KEY = 'LAST_SYNC_TS';
@@ -8,6 +9,11 @@ function getSpreadsheetId_() {
   const legacyKeys = ['SPREADSHEET_ID', 'SPREADSHEETID', 'SHEET_ID'];
   const storedId = props.getProperty(TASKS_SPREADSHEET_PROPERTY);
   if (storedId) return storedId;
+
+  if (DEFAULT_TASKS_SPREADSHEET_ID) {
+    props.setProperty(TASKS_SPREADSHEET_PROPERTY, DEFAULT_TASKS_SPREADSHEET_ID);
+    return DEFAULT_TASKS_SPREADSHEET_ID;
+  }
 
   for (const key of legacyKeys) {
     const legacyId = props.getProperty(key);
@@ -135,7 +141,7 @@ function writeTasks_(sheet, tasks) {
 
 function saveTask(task) {
   if (!task || !task.id) {
-    throw new Error('Uma tarefa válida com ID é necessária.');
+    throw new Error('Uma tarefa valida com ID e necessaria.');
   }
   const sheet = getSheet_();
   const lastRow = sheet.getLastRow();
