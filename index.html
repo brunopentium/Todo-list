@@ -3,39 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="refresh" content="0; url=./Index.html">
   <title>Todo List</title>
   <style>
+    html,
     body {
-      min-height: 100vh;
+      width: 100%;
+      height: 100%;
       margin: 0;
-      display: grid;
-      place-items: center;
-      font-family: Arial, sans-serif;
       background: #f8fafc;
-      color: #0f172a;
+      font-family: Arial, sans-serif;
     }
 
-    main {
-      width: min(90vw, 420px);
-      text-align: center;
-      line-height: 1.5;
+    .app-frame {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
     }
 
-    a {
-      color: #2563eb;
+    .fallback {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 2;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #fff;
+      font-size: 14px;
       font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
     }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Todo List</h1>
-    <p>Redirecionando para o aplicativo...</p>
-    <p><a href="./Index.html">Abrir Todo List</a></p>
-  </main>
-  <script>
-    window.location.replace('./Index.html');
-  </script>
+  <iframe
+    class="app-frame"
+    title="Todo List"
+    src="https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec"
+    allow="clipboard-read; clipboard-write"
+  ></iframe>
+  <a class="fallback" href="https://script.google.com/macros/s/AKfycbzADdjflDU050A0TJfp2AHXX-EFF_zDib9aLP9YA7aS-8c7wnex9Pss5n91kFFfqoO1/exec" target="_blank" rel="noopener">Abrir direto</a>
 </body>
 </html>
