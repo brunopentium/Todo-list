@@ -81,6 +81,7 @@ function doGet() {
   const html = HtmlService.createHtmlOutputFromFile('IndexG').getContent();
   return HtmlService.createHtmlOutput(patchIndexHtml_(html))
     .setTitle('Todo List - Apps Script')
+    .setFaviconUrl('https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/2705.png')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
